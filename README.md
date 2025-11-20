@@ -9,6 +9,7 @@ it takes audio samples, slices them into microscopic pieces, and rearranges them
 - rate adjust
 - samplerate adjust
 - glue reverb
+
 **toggles**    
 - random bp/lp/hp filters
 - random vol/pan modulation 
