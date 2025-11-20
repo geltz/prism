@@ -7,7 +7,7 @@ features
 - spectral wash
 - bit crush
 - rate adjust
-- sample rate from 8khz to 44.1khz
+- samplerate adjust
 - glue reverb
 - random bp/lp/hp filters as toggle
 - random vol/pan modulation as toggle    
