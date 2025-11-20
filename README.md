@@ -2,12 +2,13 @@ prism is a lightweight audio engine and glitch texture generator with a pyqt6 in
 
 it takes audio samples, slices them into microscopic pieces, and rearranges them into rhythmic 2-bar loops.  
 
-features
+sliders  
 - grid density
 - spectral wash
 - bit crush
 - rate adjust
 - samplerate adjust
 - glue reverb
-- random bp/lp/hp filters as toggle
-- random vol/pan modulation as toggle    
+toggles  
+- random bp/lp/hp filters
+- random vol/pan modulation 
