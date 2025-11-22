@@ -10,7 +10,7 @@ from scipy import signal
 from PyQt6.QtCore import (Qt, QThread, pyqtSignal, QUrl, QTimer, QRectF, QPointF,
                           QPropertyAnimation, QEasingCurve)
 from PyQt6.QtGui import (QColor, QPainter, QLinearGradient, QPen, QPainterPath, 
-                         QRadialGradient, QBrush, QFont, QPixmap, QCursor)
+                         QRadialGradient, QBrush, QFont, QPixmap, QCursor, QPolygonF)
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                              QHBoxLayout, QLabel, QSlider, QPushButton, 
                              QFileDialog, QFrame, QGraphicsDropShadowEffect,
@@ -193,11 +193,16 @@ class AudioEngine:
         return y
 
     @staticmethod
-    def apply_samplerate(data, original_sr, target_idx):
-        rates = [8000, 11025, 16000, 32000, 44100]
-        target_sr = rates[int(target_idx)]
+    def apply_samplerate(data, original_sr, target_sr):
+        # target_sr is now a continuous float/int value (e.g. 24050)
         if target_sr >= original_sr: return data
+        
+        # Safety check
+        target_sr = max(1000, target_sr)
+        
         num_samples_low = int(len(data) * (target_sr / original_sr))
+        if num_samples_low < 2: return data # Prevent empty arrays
+
         if data.ndim == 2:
             l_lo = signal.resample(data[:, 0], num_samples_low)
             l_hi = signal.resample(l_lo, len(data))
@@ -264,20 +269,6 @@ STYLES = """
         font-size: 14px; 
         font-weight: bold; 
     }
-
-    QSlider::groove:horizontal { border: 1px solid #bbb; background: rgba(63, 108, 155, 0.15); height: 6px; border-radius: 3px; }
-    QSlider::sub-page:horizontal { background: #7aa6d4; border-radius: 3px; }
-    
-    /* Updated Handle: Circle */
-    QSlider::handle:horizontal { 
-        background: #fff; 
-        border: 2px solid #7aa6d4; 
-        width: 16px; 
-        height: 16px; 
-        margin: -6px 0; 
-        border-radius: 2px; 
-    }
-    QSlider::handle:horizontal:hover { border-color: #3f6c9b; background: #f0f4f8; }
     
     QPushButton { background-color: rgba(255, 255, 255, 0.6); border: 1px solid #7aa6d4; color: #3f6c9b; border-radius: 6px; padding: 6px 12px; font-weight: bold; }
     QPushButton:hover { background-color: #3f6c9b; color: white; }
@@ -309,40 +300,62 @@ STYLES = """
     QCheckBox::indicator:checked { background: #3f6c9b; border: 1px solid #3f6c9b; }
 """
 
-class AnimatedTitle(QLabel):
-    def __init__(self, text, parent=None):
-        super().__init__(text, parent)
+class PrismLogo(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        # Compact height
+        self.setMinimumHeight(60)
         self.phase = 0.0
-        font = self.font()
-        font.setFamily("Segoe UI")
-        font.setPixelSize(22)
-        font.setBold(True)
-        font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 4.0)
-        self.setFont(font)
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.animate)
         self.timer.start(16)
-        # Reduced Opacity for subtle look
-        self.color_base = QColor(63, 108, 155, 160)
-        self.color_highlight = QColor(209, 227, 246, 200)
 
     def animate(self):
-        self.phase = (self.phase + 0.01) % (2 * math.pi)
+        self.phase = (self.phase + 0.02) % 1.0
         self.update()
 
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        t = (self.phase / (2 * math.pi)) * 2.0 
-        w, bw = self.width(), 150.0
-        center_x = (t * w * 1.5) - (w * 0.25)
-        grad = QLinearGradient(center_x - bw, 0, center_x + bw, 0)
-        grad.setColorAt(0.0, self.color_base)
-        grad.setColorAt(0.5, self.color_highlight)
-        grad.setColorAt(1.0, self.color_base)
-        painter.setPen(QPen(QBrush(grad), 0))
-        painter.setFont(self.font())
-        painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, self.text())
+        w, h = self.width(), self.height()
+        cx, cy = w / 2, h / 2
+        
+        # Scaled down triangle
+        tri_size = 20
+        
+        p1 = QPointF(cx, cy - tri_size)
+        p2 = QPointF(cx + tri_size * 0.866, cy + tri_size * 0.5)
+        p3 = QPointF(cx - tri_size * 0.866, cy + tri_size * 0.5)
+        triangle = QPolygonF([p1, p2, p3])
+
+        # 1. Beam
+        painter.setPen(QPen(QColor(255, 255, 255, 200), 2))
+        painter.drawLine(QPointF(0, cy + 5), QPointF(cx - 8, cy + 2))
+
+        # 2. Rainbow
+        for i in range(7):
+            hue = i / 7.0
+            pulse = (math.sin(self.phase * 6.28 + i) + 1) / 2
+            alpha = int(100 + 155 * pulse)
+            col = QColor.fromHslF(hue, 0.8, 0.6, alpha/255.0)
+            
+            painter.setPen(QPen(col, 1.5))
+            origin = QPointF(cx + 6, cy)
+            
+            angle_deg = -25 + (i * 8) # Slightly tighter spread
+            angle_rad = math.radians(angle_deg)
+            dest_x = w
+            dest_y = cy + math.tan(angle_rad) * (w - cx)
+            
+            painter.drawLine(origin, QPointF(dest_x, dest_y))
+
+        # 3. Prism
+        grad = QLinearGradient(p1, p3)
+        grad.setColorAt(0.0, QColor(255, 255, 255, 100))
+        grad.setColorAt(1.0, QColor(255, 255, 255, 10))
+        painter.setBrush(grad)
+        painter.setPen(QPen(QColor(240, 240, 255), 1.5))
+        painter.drawPolygon(triangle)
 
 class GlassFrame(QFrame):
     def __init__(self, parent=None):
@@ -465,7 +478,6 @@ class WaveformWidget(QWidget):
             ripple_w = 80 
             
             # 3. Dynamic Color Wave Ripple
-            # Mask the ripple effect to the waveform shape
             rect = QRectF(px - ripple_w, 0, ripple_w * 2, self.height())
             source_rect = rect.toRect().intersected(self.rect())
             
@@ -503,10 +515,97 @@ class WaveformWidget(QWidget):
 
 def setup_row_layout(widget):
     layout = QVBoxLayout(widget)
-    # Removed vertical padding (was 0, 2, 0, 2)
+    # Ultra-compact margins
     layout.setContentsMargins(0, 0, 0, 0) 
     layout.setSpacing(0)
     return layout
+
+class PrismSlider(QSlider):
+    def __init__(self, orientation=Qt.Orientation.Horizontal, parent=None):
+        super().__init__(orientation, parent)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        # Compact height
+        self.setFixedHeight(24)
+        
+        self.phase = 0.0
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.animate)
+        self.timer.start(50)
+
+    def animate(self):
+        self.phase = (self.phase + 0.02) % 1.0
+        self.update()
+
+    # --- Custom Input Handling to Fix Click Bugs ---
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            val = self.pixel_to_value(event.pos().x())
+            self.setValue(val)
+            event.accept()
+            
+    def mouseMoveEvent(self, event):
+        if event.buttons() & Qt.MouseButton.LeftButton:
+            val = self.pixel_to_value(event.pos().x())
+            self.setValue(val)
+            event.accept()
+
+    def pixel_to_value(self, x):
+        w = self.width()
+        if w == 0: return 0
+        # Map X directly to range 0..1
+        norm = max(0.0, min(1.0, x / w))
+        return int(self.minimum() + norm * (self.maximum() - self.minimum()))
+    # -----------------------------------------------
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        rect = self.rect()
+        # Groove
+        groove_h = 4
+        groove_y = rect.height() / 2 - groove_h / 2
+        groove_rect = QRectF(rect.x(), groove_y, rect.width(), groove_h)
+        
+        painter.setBrush(QColor(63, 108, 155, 30))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawRoundedRect(groove_rect, 2, 2)
+        
+        val_norm = (self.value() - self.minimum()) / (self.maximum() - self.minimum()) if (self.maximum() > self.minimum()) else 0
+        
+        # Hue Mapping: 0.0 to 0.5 (Red to Cyan)
+        fill_hue = val_norm * 0.5
+        
+        # SUBTLER COLORS: Saturation 0.45, Lightness 0.7
+        fill_color = QColor.fromHslF(fill_hue, 0.45, 0.7, 1.0)
+        
+        fill_rect = QRectF(rect.x(), groove_y, rect.width() * val_norm, groove_h)
+        painter.setBrush(fill_color)
+        painter.drawRoundedRect(fill_rect, 2, 2)
+        
+        # Handle
+        handle_size = 16
+        cx = rect.x() + val_norm * (rect.width() - handle_size) + handle_size / 2
+        cy = rect.height() / 2
+        
+        h_half = handle_size / 2
+        p1 = QPointF(cx, cy - h_half)
+        p2 = QPointF(cx - h_half, cy + h_half)
+        p3 = QPointF(cx + h_half, cy + h_half)
+        
+        grad = QLinearGradient(p2, p3)
+        h1 = (self.phase) % 1.0
+        h2 = (self.phase + 0.33) % 1.0
+        h3 = (self.phase + 0.66) % 1.0
+        
+        # Keeping handle gradient slightly vibrant but matching the softness
+        grad.setColorAt(0.0, QColor.fromHslF(h1, 0.6, 0.65, 1.0)) 
+        grad.setColorAt(0.5, QColor.fromHslF(h2, 0.6, 0.65, 1.0))
+        grad.setColorAt(1.0, QColor.fromHslF(h3, 0.6, 0.65, 1.0))
+        
+        painter.setBrush(grad)
+        painter.setPen(QPen(QColor(255, 255, 255), 1.5))
+        painter.drawPolygon(QPolygonF([p1, p2, p3]))
 
 class ControlRow(QWidget):
     def __init__(self, label, key, parent_data):
@@ -520,7 +619,7 @@ class ControlRow(QWidget):
         header.addWidget(self.lbl_name)
         header.addStretch()
         header.addWidget(self.lbl_val)
-        self.slider = QSlider(Qt.Orientation.Horizontal)
+        self.slider = PrismSlider(Qt.Orientation.Horizontal)
         self.slider.setRange(0, 100)
         self.slider.valueChanged.connect(self.update_val)
         layout.addLayout(header)
@@ -542,7 +641,7 @@ class RateControlRow(QWidget):
         header.addWidget(self.lbl_name)
         header.addStretch()
         header.addWidget(self.lbl_val)
-        self.slider = QSlider(Qt.Orientation.Horizontal)
+        self.slider = PrismSlider(Qt.Orientation.Horizontal)
         self.slider.setRange(5, 20)
         self.slider.setValue(10)
         self.slider.valueChanged.connect(self.update_val)
@@ -568,7 +667,7 @@ class DiscreteControlRow(QWidget):
         header.addWidget(self.lbl_name)
         header.addStretch()
         header.addWidget(self.lbl_val)
-        self.slider = QSlider(Qt.Orientation.Horizontal)
+        self.slider = PrismSlider(Qt.Orientation.Horizontal)
         self.slider.setRange(0, len(values) - 1)
         self.slider.setValue(len(values) - 1)
         self.slider.valueChanged.connect(self.update_val)
@@ -656,6 +755,111 @@ class TripleToggleRow(QWidget):
     def update_val(self, key, checked):
         self.parent_data[key] = checked
 
+class RainbowButton(QPushButton):
+    def __init__(self, text, parent=None):
+        super().__init__(text, parent)
+        self.setMouseTracking(True)
+        self.hover_pos = QPointF(0, 0)
+        self.is_hovering = False
+        self.phase = 0.0
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.animate)
+        self.timer.start(50)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFixedHeight(32)
+
+    def animate(self):
+        self.phase = (self.phase + 0.01) % 1.0
+        self.update()
+
+    def mouseMoveEvent(self, event):
+        self.hover_pos = event.position()
+        self.update()
+        super().mouseMoveEvent(event)
+
+    def enterEvent(self, event):
+        self.is_hovering = True
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self.is_hovering = False
+        super().leaveEvent(event)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        if self.isEnabled():
+            w, h = self.width(), self.height()
+            angle = self.phase * 2 * math.pi
+            cx, cy = w / 2, h / 2
+            length = max(w, h) 
+            
+            x1 = cx + math.cos(angle) * length
+            y1 = cy + math.sin(angle) * length
+            x2 = cx - math.cos(angle) * length
+            y2 = cy - math.sin(angle) * length
+
+            grad = QLinearGradient(x1, y1, x2, y2)
+            
+            # Vibrant Rainbow Colors (Higher Saturation, Medium Lightness)
+            c1 = QColor.fromHslF((self.phase) % 1.0, 0.8, 0.6, 1.0)
+            c2 = QColor.fromHslF((self.phase + 0.5) % 1.0, 0.8, 0.6, 1.0)
+            
+            grad.setColorAt(0.0, c1)
+            grad.setColorAt(1.0, c2)
+
+            painter.setBrush(grad)
+        else:
+            painter.setBrush(QColor("#d0dbe5"))
+            
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawRoundedRect(self.rect(), 6, 6)
+
+        if self.is_hovering and self.isEnabled():
+            radius = self.width() * 0.5
+            r_grad = QRadialGradient(self.hover_pos, radius)
+            r_grad.setColorAt(0.0, QColor(255, 255, 255, 80)) 
+            r_grad.setColorAt(1.0, QColor(255, 255, 255, 0)) 
+            painter.setBrush(r_grad)
+            painter.drawRoundedRect(self.rect(), 6, 6)
+
+        # White text for readability on vibrant background
+        text_col = QColor("white") if self.isEnabled() else QColor("#f6f9fc")
+        painter.setPen(text_col)
+        
+        font = self.font()
+        font.setBold(True)
+        font.setPointSize(10)
+        painter.setFont(font)
+        painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, self.text())
+
+class SampleRateRow(QWidget):
+    def __init__(self, label, key, parent_data):
+        super().__init__()
+        self.key, self.parent_data = key, parent_data
+        layout = setup_row_layout(self)
+        header = QHBoxLayout()
+        self.lbl_name = QLabel(label.lower())
+        self.lbl_val = QLabel("44100 Hz")
+        self.lbl_val.setStyleSheet("color: #3f6c9b; font-weight: bold;")
+        header.addWidget(self.lbl_name)
+        header.addStretch()
+        header.addWidget(self.lbl_val)
+        
+        self.slider = PrismSlider(Qt.Orientation.Horizontal)
+        # Continuous range setup
+        self.slider.setRange(8000, 44100)
+        self.slider.setValue(44100)
+        self.slider.valueChanged.connect(self.update_val)
+        
+        layout.addLayout(header)
+        layout.addWidget(self.slider)
+        
+    def update_val(self, val):
+        self.lbl_val.setText(f"{val} Hz")
+        self.parent_data[self.key] = float(val)
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -669,9 +873,10 @@ class MainWindow(QMainWindow):
         
         self.params = {
             'glitch': 0.5, 'wash': 0.0, 'crush': 0.0, 'reverb': 0.0, 
-            'sr_select': 4.0, 'rate': 1.0, 
+            'sr_select': 44100.0, 'rate': 1.0, # sr_select default is now 44100.0
             'filter_amt': 0.0, 'vol_pan_amt': 0.0
         }
+        
         self.player = QMediaPlayer()
         self.audio_output = QAudioOutput()
         self.player.setAudioOutput(self.audio_output)
@@ -718,7 +923,7 @@ class MainWindow(QMainWindow):
         side_layout.setContentsMargins(15, 20, 15, 20)
         side_layout.setSpacing(2)
 
-        side_layout.addWidget(AnimatedTitle("prism"))
+        side_layout.addWidget(PrismLogo())
         self.lbl_status = QLabel("status: idle")
         self.lbl_status.setObjectName("SubHeader")
         side_layout.addWidget(self.lbl_status)
@@ -734,10 +939,8 @@ class MainWindow(QMainWindow):
         side_layout.addWidget(ControlRow("spectral wash", "wash", self.params))
         side_layout.addWidget(ControlRow("bit crush", "crush", self.params))
         side_layout.addWidget(RateControlRow("playback rate", "rate", self.params))
-        
-        sr_opts = [8000, 11025, 16000, 32000, 44100]
-        
-        side_layout.addWidget(DiscreteControlRow("sample rate", "sr_select", self.params, sr_opts))
+
+        side_layout.addWidget(SampleRateRow("sample rate", "sr_select", self.params))
         side_layout.addWidget(ControlRow("glue reverb", "reverb", self.params))
 
         side_layout.addWidget(ControlRow("filter mod", "filter_amt", self.params))
@@ -763,15 +966,16 @@ class MainWindow(QMainWindow):
         side_layout.addWidget(self.transport_frame)
 
         action_layout = QHBoxLayout()
+        action_layout.setContentsMargins(0, 8, 0, 0)
         action_layout.setSpacing(10)
         
-        self.btn_process = QPushButton("process")
+        self.btn_process = RainbowButton("process")
         self.btn_process.setObjectName("ProcessBtn")
         self.btn_process.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.btn_process.setEnabled(False)
         self.btn_process.clicked.connect(self.start_processing)
         
-        self.btn_save = QPushButton("export")
+        self.btn_save = RainbowButton("export")
         self.btn_save.setObjectName("SaveBtn")
         self.btn_save.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.btn_save.setEnabled(False)
