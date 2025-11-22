@@ -759,23 +759,17 @@ class RainbowButton(QPushButton):
     def __init__(self, text, parent=None):
         super().__init__(text, parent)
         self.setMouseTracking(True)
-        self.hover_pos = QPointF(0, 0)
         self.is_hovering = False
         self.phase = 0.0
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.animate)
-        self.timer.start(50)
+        self.timer.start(30) 
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setFixedHeight(32)
 
     def animate(self):
-        self.phase = (self.phase + 0.01) % 1.0
+        self.phase = (self.phase + 0.005) % 1.0
         self.update()
-
-    def mouseMoveEvent(self, event):
-        self.hover_pos = event.position()
-        self.update()
-        super().mouseMoveEvent(event)
 
     def enterEvent(self, event):
         self.is_hovering = True
@@ -789,50 +783,50 @@ class RainbowButton(QPushButton):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
+        rect = self.rect()
+        
         if self.isEnabled():
-            w, h = self.width(), self.height()
-            angle = self.phase * 2 * math.pi
-            cx, cy = w / 2, h / 2
-            length = max(w, h) 
-            
-            x1 = cx + math.cos(angle) * length
-            y1 = cy + math.sin(angle) * length
-            x2 = cx - math.cos(angle) * length
-            y2 = cy - math.sin(angle) * length
+            # 1. Base
+            painter.setBrush(QColor("white"))
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawRoundedRect(rect, 6, 6)
 
-            grad = QLinearGradient(x1, y1, x2, y2)
-            
-            # Vibrant Rainbow Colors (Higher Saturation, Medium Lightness)
-            c1 = QColor.fromHslF((self.phase) % 1.0, 0.8, 0.6, 1.0)
-            c2 = QColor.fromHslF((self.phase + 0.5) % 1.0, 0.8, 0.6, 1.0)
-            
-            grad.setColorAt(0.0, c1)
-            grad.setColorAt(1.0, c2)
+            # 2. Pearlescent Flow
+            grad = QLinearGradient(0, 0, rect.width(), 0)
+            for i in range(4):
+                t = i / 3.0
+                hue = (self.phase + (t * 0.5)) % 1.0
+                opacity = 200 if self.is_hovering else 150
+                col = QColor.fromHslF(hue, 0.6, 0.92, opacity/255.0)
+                grad.setColorAt(t, col)
 
             painter.setBrush(grad)
-        else:
-            painter.setBrush(QColor("#d0dbe5"))
+            painter.drawRoundedRect(rect, 6, 6)
             
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.drawRoundedRect(self.rect(), 6, 6)
+            # 3. Border
+            border_col = QColor.fromHslF(self.phase, 0.5, 0.8, 1.0)
+            painter.setPen(QPen(border_col, 1))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawRoundedRect(rect, 6, 6)
 
-        if self.is_hovering and self.isEnabled():
-            radius = self.width() * 0.5
-            r_grad = QRadialGradient(self.hover_pos, radius)
-            r_grad.setColorAt(0.0, QColor(255, 255, 255, 80)) 
-            r_grad.setColorAt(1.0, QColor(255, 255, 255, 0)) 
-            painter.setBrush(r_grad)
-            painter.drawRoundedRect(self.rect(), 6, 6)
+            # 4. Text Color - Lighter Slate Blue
+            text_col = QColor("#6a8cb3") 
+            
+        else:
+            painter.setBrush(QColor("#e0e6ed"))
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawRoundedRect(rect, 6, 6)
+            text_col = QColor("#a0b0c0")
 
-        # White text for readability on vibrant background
-        text_col = QColor("white") if self.isEnabled() else QColor("#f6f9fc")
+        # Futuristic Font Settings
         painter.setPen(text_col)
-        
-        font = self.font()
+        font = QFont("Segoe UI", 9) # Slightly smaller to account for spacing
         font.setBold(True)
-        font.setPointSize(10)
+        font.setCapitalization(QFont.Capitalization.AllLowercase)
+        font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 3.0) 
+        
         painter.setFont(font)
-        painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, self.text())
+        painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, self.text())
 
 class SampleRateRow(QWidget):
     def __init__(self, label, key, parent_data):
