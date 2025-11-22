@@ -103,16 +103,25 @@ class AudioEngine:
         return out
 
     @staticmethod
-    def apply_rand_filter(data, sr):
+    def apply_rand_filter(data, sr, intensity):
+        if intensity <= 0.01: return data
         rng = np.random.default_rng()
         step = int((60/BPM/4) * sr)
         y = data.copy()
         total_len = len(y)
+        
         for i in range(0, total_len, step):
-            if rng.random() > 0.25: continue
+            # Intensity determines probability of filter occuring on a specific step
+            # At 1.0, it happens every step. At 0.2, it happens 20% of the time.
+            if rng.random() > intensity: continue
+            
             end = min(i + step, total_len)
             chunk = y[i:end]
             ftype = rng.choice(['lp', 'hp', 'bp'])
+            
+            # Intensity also slightly affects resonance/bandwidth
+            q_factor = 0.5 + (intensity * 1.5) 
+            
             if ftype == 'lp':
                 freq = rng.uniform(300, 1200)
                 sos = signal.butter(2, freq, 'low', fs=sr, output='sos')
@@ -121,7 +130,10 @@ class AudioEngine:
                 sos = signal.butter(2, freq, 'high', fs=sr, output='sos')
             else: 
                 center = rng.uniform(400, 3000)
-                sos = signal.butter(2, [center*0.8, center*1.2], 'band', fs=sr, output='sos')
+                # Higher intensity = narrower band
+                width = 0.4 if intensity > 0.8 else 0.8
+                sos = signal.butter(2, [center*(1-width/2), center*(1+width/2)], 'band', fs=sr, output='sos')
+                
             if chunk.ndim == 2:
                 chunk[:, 0] = signal.sosfilt(sos, chunk[:, 0])
                 chunk[:, 1] = signal.sosfilt(sos, chunk[:, 1])
@@ -131,7 +143,8 @@ class AudioEngine:
         return y
 
     @staticmethod
-    def apply_vol_pan(data, sr):
+    def apply_vol_pan(data, sr, intensity):
+        if intensity <= 0.01: return data
         rng = np.random.default_rng()
         step = int((60/BPM/4) * sr)
         if data.ndim == 1:
@@ -141,15 +154,26 @@ class AudioEngine:
             left = data[:, 0].copy()
             right = data[:, 1].copy()
         total_len = len(left)
+        
         for i in range(0, total_len, step):
             end = min(i + step, total_len)
-            vol = rng.uniform(0.4, 1.0)
-            pan = rng.uniform(-0.8, 0.8)
+            
+            # Volume drops deeper as intensity increases
+            # max drop at intensity 1.0 is down to 0.4
+            vol_drop = rng.uniform(0.0, 0.6) * intensity
+            vol = 1.0 - vol_drop
+            
+            # Pan spreads wider as intensity increases
+            # max pan at intensity 1.0 is -0.9 to 0.9
+            pan_width = 0.9 * intensity
+            pan = rng.uniform(-pan_width, pan_width)
+            
             p_ang = (pan + 1) * (np.pi / 4)
             g_left = np.cos(p_ang) * vol
             g_right = np.sin(p_ang) * vol
             left[i:end] *= g_left
             right[i:end] *= g_right
+            
         return np.column_stack((left, right))
 
     @staticmethod
@@ -188,13 +212,14 @@ class AudioEngine:
     @staticmethod
     def process(audio, sr, params):
         slices = AudioEngine.make_slice_library(audio, sr)
-        # Generate just the 2-bar loop, do not tile to original length
         y = AudioEngine.generate_2bar_loop(slices, sr, density=params['glitch'])
         
-        if params['rand_filter']: y = AudioEngine.apply_rand_filter(y, sr)
-        if params['vol_pan']: y = AudioEngine.apply_vol_pan(y, sr)
-        else:
-            if y.ndim == 1: y = np.column_stack((y, y))
+        # Updated calls to use float sliders
+        y = AudioEngine.apply_rand_filter(y, sr, intensity=params['filter_amt'])
+        y = AudioEngine.apply_vol_pan(y, sr, intensity=params['vol_pan_amt'])
+        
+        # Ensure stereo if it wasn't panned
+        if y.ndim == 1: y = np.column_stack((y, y))
 
         y = AudioEngine.bitcrush(y, sr, depth=params['crush'])
         y = AudioEngine.apply_samplerate(y, sr, params['sr_select'])
@@ -206,8 +231,6 @@ class AudioEngine:
 
         if params['wash'] > 0:
             y = AudioEngine.simple_reverb(y, sr, mix=0.5*params['wash'], room_size=0.9, damp=0.1)
-        
-        # Reduced glue reverb intensity by multiplying input param by 0.7
         y = AudioEngine.simple_reverb(y, sr, mix=params['reverb'] * 0.7, room_size=0.85)
         
         peak = np.max(np.abs(y))
@@ -244,7 +267,16 @@ STYLES = """
 
     QSlider::groove:horizontal { border: 1px solid #bbb; background: rgba(63, 108, 155, 0.15); height: 6px; border-radius: 3px; }
     QSlider::sub-page:horizontal { background: #7aa6d4; border-radius: 3px; }
-    QSlider::handle:horizontal { background: #fff; border: 2px solid #7aa6d4; width: 14px; height: 14px; margin: -5px 0; border-radius: 9px; }
+    
+    /* Updated Handle: Circle */
+    QSlider::handle:horizontal { 
+        background: #fff; 
+        border: 2px solid #7aa6d4; 
+        width: 16px; 
+        height: 16px; 
+        margin: -6px 0; 
+        border-radius: 2px; 
+    }
     QSlider::handle:horizontal:hover { border-color: #3f6c9b; background: #f0f4f8; }
     
     QPushButton { background-color: rgba(255, 255, 255, 0.6); border: 1px solid #7aa6d4; color: #3f6c9b; border-radius: 6px; padding: 6px 12px; font-weight: bold; }
@@ -261,7 +293,6 @@ STYLES = """
     QPushButton#ProcessBtn:hover, QPushButton#SaveBtn:hover { background-color: #5a8fbe; }
     QPushButton#ProcessBtn:disabled, QPushButton#SaveBtn:disabled { background-color: #d0dbe5; color: #f0f0f0; }
 
-    /* Revised Clear Button */
     QPushButton#ClearBtn { 
         background-color: rgba(217, 83, 79, 0.1); 
         border: 1px solid rgba(217, 83, 79, 0.3); 
@@ -334,13 +365,11 @@ class WaveformWidget(QWidget):
         self.setMinimumHeight(160)
         self.setMouseTracking(True) 
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        # performance: cache the static visuals
         self._static_pixmap = None
 
     def set_data(self, data):
         if data.ndim > 1: d_mono = data.mean(axis=1)
         else: d_mono = data  
-        # aggressive downsample for ui performance
         target_points = 1000
         step = max(1, len(d_mono) // target_points)
         self.data = d_mono[::step]
@@ -350,7 +379,7 @@ class WaveformWidget(QWidget):
 
     def set_play_head(self, pos):
         self.play_head_pos = max(0.0, min(1.0, pos))
-        self.update() # Triggers paintEvent
+        self.update()
 
     def resizeEvent(self, event):
         self.update_static_waveform()
@@ -372,7 +401,6 @@ class WaveformWidget(QWidget):
             self.seek_requested.emit(pos_norm)
 
     def update_static_waveform(self):
-        """Draws the expensive waveform/gradient to a Pixmap once."""
         w, h = self.width(), self.height()
         if w == 0 or h == 0: return
 
@@ -387,11 +415,9 @@ class WaveformWidget(QWidget):
             painter.end()
             return
 
-        # prepare paint on pixmap
         painter = QPainter(self._static_pixmap)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        # build path
         path = QPainterPath()
         cy = h / 2
         path.moveTo(0, cy)
@@ -404,7 +430,7 @@ class WaveformWidget(QWidget):
         path.lineTo(w, cy)
         path.lineTo(0, cy)
         
-        # Gradient
+        # Standard Cool Blue Gradient
         grad = QLinearGradient(0, 0, 0, h)
         base_color = QColor(63, 108, 155)
         base_color.setAlpha(0)
@@ -425,25 +451,61 @@ class WaveformWidget(QWidget):
 
     def paintEvent(self, event):
         painter = QPainter(self)
-        # subtle container
+        # 1. Background
         painter.setBrush(QColor(255, 255, 255, 50))
         painter.setPen(Qt.PenStyle.NoPen)
         painter.drawRoundedRect(self.rect(), 4, 4)
 
-        # blit cached visuals (fast)
+        # 2. Static Waveform
         if self._static_pixmap:
             painter.drawPixmap(0, 0, self._static_pixmap)
 
-        # draw dynamic playhead
-        if self.data is not None and self.play_head_pos >= 0:
+        if self.data is not None and self.play_head_pos >= 0 and self._static_pixmap:
             px = int(self.play_head_pos * self.width())
-            painter.setPen(QPen(QColor(63, 108, 155, 200), 1.5)) 
+            ripple_w = 80 
+            
+            # 3. Dynamic Color Wave Ripple
+            # Mask the ripple effect to the waveform shape
+            rect = QRectF(px - ripple_w, 0, ripple_w * 2, self.height())
+            source_rect = rect.toRect().intersected(self.rect())
+            
+            if not source_rect.isEmpty():
+                wave_slice = self._static_pixmap.copy(source_rect)
+                slice_painter = QPainter(wave_slice)
+                slice_painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
+                
+                # Dynamic Hue based on position (Color Wave)
+                # Cycles through spectrum as head moves
+                hue = (self.play_head_pos * 0.8 + 0.55) % 1.0 
+                
+                grad_center = px - source_rect.x()
+                r_grad = QLinearGradient(grad_center - ripple_w, 0, grad_center + ripple_w, 0)
+                
+                c_center = QColor.fromHslF(hue, 0.85, 0.6, 1.0)
+                c_edge = QColor.fromHslF(hue, 0.85, 0.6, 0.0)
+                
+                r_grad.setColorAt(0.0, c_edge)
+                r_grad.setColorAt(0.5, c_center)
+                r_grad.setColorAt(1.0, c_edge)
+                
+                slice_painter.fillRect(wave_slice.rect(), r_grad)
+                slice_painter.end()
+                
+                # Draw "Screen" to make it glow/light up
+                painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Screen)
+                painter.drawPixmap(source_rect.topLeft(), wave_slice)
+                painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
+
+            # 4. Playhead Line
+            line_hue = (self.play_head_pos * 0.8 + 0.55) % 1.0
+            painter.setPen(QPen(QColor.fromHslF(line_hue, 0.6, 0.4, 0.9), 1.5)) 
             painter.drawLine(px, 10, px, self.height() - 10)
 
 def setup_row_layout(widget):
     layout = QVBoxLayout(widget)
-    layout.setContentsMargins(0, 2, 0, 2) 
-    layout.setSpacing(2)
+    # Removed vertical padding (was 0, 2, 0, 2)
+    layout.setContentsMargins(0, 0, 0, 0) 
+    layout.setSpacing(0)
     return layout
 
 class ControlRow(QWidget):
@@ -574,6 +636,26 @@ class MediaButton(QPushButton):
         elif "■" in txt:
             painter.drawRoundedRect(QRectF(cx - 8, cy - 8, 16, 16), 3, 3)
 
+class TripleToggleRow(QWidget):
+    def __init__(self, items, parent_data):
+        """
+        items: list of tuples [(label, key), (label, key), ...]
+        """
+        super().__init__()
+        self.parent_data = parent_data
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 5, 0, 5)
+        layout.setSpacing(15)
+        
+        for label, key in items:
+            cb = QCheckBox(label)
+            cb.setChecked(bool(parent_data.get(key, False)))
+            cb.toggled.connect(lambda checked, k=key: self.update_val(k, checked))
+            layout.addWidget(cb)
+            
+    def update_val(self, key, checked):
+        self.parent_data[key] = checked
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -587,9 +669,9 @@ class MainWindow(QMainWindow):
         
         self.params = {
             'glitch': 0.5, 'wash': 0.0, 'crush': 0.0, 'reverb': 0.0, 
-            'sr_select': 4.0, 'rate': 1.0, 'rand_filter': False, 'vol_pan': False
+            'sr_select': 4.0, 'rate': 1.0, 
+            'filter_amt': 0.0, 'vol_pan_amt': 0.0
         }
-
         self.player = QMediaPlayer()
         self.audio_output = QAudioOutput()
         self.player.setAudioOutput(self.audio_output)
@@ -629,13 +711,12 @@ class MainWindow(QMainWindow):
         self.viewport.addSpacing(10)
         self.viewport.addLayout(info_row)
         self.viewport.addStretch()
-        
-        # Right Column
+
         self.sidebar = GlassFrame()
         self.sidebar.setFixedWidth(300)
         side_layout = QVBoxLayout(self.sidebar)
         side_layout.setContentsMargins(15, 20, 15, 20)
-        side_layout.setSpacing(6) 
+        side_layout.setSpacing(2)
 
         side_layout.addWidget(AnimatedTitle("prism"))
         self.lbl_status = QLabel("status: idle")
@@ -649,13 +730,18 @@ class MainWindow(QMainWindow):
         side_layout.addSpacing(5)
 
         side_layout.addWidget(ControlRow("grid density", "glitch", self.params))
+        
         side_layout.addWidget(ControlRow("spectral wash", "wash", self.params))
         side_layout.addWidget(ControlRow("bit crush", "crush", self.params))
         side_layout.addWidget(RateControlRow("rate", "rate", self.params))
+        
         sr_opts = [8000, 11025, 16000, 32000, 44100]
+        
         side_layout.addWidget(DiscreteControlRow("samplerate", "sr_select", self.params, sr_opts))
         side_layout.addWidget(ControlRow("glue reverb", "reverb", self.params))
-        side_layout.addWidget(ToggleRow("rand filter", "rand_filter", "vol/pan mod", "vol_pan", self.params))
+
+        side_layout.addWidget(ControlRow("filter mod", "filter_amt", self.params))
+        side_layout.addWidget(ControlRow("vol/pan mod", "vol_pan_amt", self.params))
 
         side_layout.addStretch()
 
