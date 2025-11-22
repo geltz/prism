@@ -86,8 +86,10 @@ class AudioEngine:
         
         while cursor < loop_samples:
             r = rng.random()
-            if r < (0.2 + 0.6 * density): grid_mult = 1 
-            elif r < (0.6 + 0.3 * density): grid_mult = 2 
+            # Modified probabilities to prioritize longer chops (grid_mult 4)
+            # and make rapid 16th note stutters (grid_mult 1) less aggressive
+            if r < (0.1 + 0.4 * density): grid_mult = 1 
+            elif r < (0.4 + 0.4 * density): grid_mult = 2 
             else: grid_mult = 4 
             dur = samples_16th * grid_mult
             if cursor + dur > loop_samples: dur = loop_samples - cursor
@@ -186,10 +188,8 @@ class AudioEngine:
     @staticmethod
     def process(audio, sr, params):
         slices = AudioEngine.make_slice_library(audio, sr)
-        loop_data = AudioEngine.generate_2bar_loop(slices, sr, density=params['glitch'])
-        target_len = max(len(audio), sr * 10) 
-        repeats = int(np.ceil(target_len / len(loop_data)))
-        y = np.tile(loop_data, repeats)[:target_len]
+        # Generate just the 2-bar loop, do not tile to original length
+        y = AudioEngine.generate_2bar_loop(slices, sr, density=params['glitch'])
         
         if params['rand_filter']: y = AudioEngine.apply_rand_filter(y, sr)
         if params['vol_pan']: y = AudioEngine.apply_vol_pan(y, sr)
@@ -206,7 +206,9 @@ class AudioEngine:
 
         if params['wash'] > 0:
             y = AudioEngine.simple_reverb(y, sr, mix=0.5*params['wash'], room_size=0.9, damp=0.1)
-        y = AudioEngine.simple_reverb(y, sr, mix=params['reverb'], room_size=0.85)
+        
+        # Reduced glue reverb intensity by multiplying input param by 0.7
+        y = AudioEngine.simple_reverb(y, sr, mix=params['reverb'] * 0.7, room_size=0.85)
         
         peak = np.max(np.abs(y))
         if peak > 1.0: y = y / peak
