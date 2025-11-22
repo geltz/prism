@@ -733,11 +733,11 @@ class MainWindow(QMainWindow):
         
         side_layout.addWidget(ControlRow("spectral wash", "wash", self.params))
         side_layout.addWidget(ControlRow("bit crush", "crush", self.params))
-        side_layout.addWidget(RateControlRow("rate", "rate", self.params))
+        side_layout.addWidget(RateControlRow("playback rate", "rate", self.params))
         
         sr_opts = [8000, 11025, 16000, 32000, 44100]
         
-        side_layout.addWidget(DiscreteControlRow("samplerate", "sr_select", self.params, sr_opts))
+        side_layout.addWidget(DiscreteControlRow("sample rate", "sr_select", self.params, sr_opts))
         side_layout.addWidget(ControlRow("glue reverb", "reverb", self.params))
 
         side_layout.addWidget(ControlRow("filter mod", "filter_amt", self.params))
