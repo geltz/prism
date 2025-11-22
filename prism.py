@@ -18,7 +18,6 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QGraphicsOpacityEffect)
 from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
 
-# Constants for Rhythm Engine
 BPM = 120.0
 SR_DEFAULT = 44100
 
@@ -26,7 +25,7 @@ class AudioEngine:
     @staticmethod
     def load_file(path):
         data, sr = sf.read(path, always_2d=False)
-        # Work in Mono initially for slicing ease
+        # work in mono initially for slicing ease
         if data.ndim > 1:
             data = data.mean(axis=1)
         return data.astype(np.float32), sr
@@ -333,13 +332,13 @@ class WaveformWidget(QWidget):
         self.setMinimumHeight(160)
         self.setMouseTracking(True) 
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        # PERFORMANCE: Cache the static visuals
+        # performance: cache the static visuals
         self._static_pixmap = None
 
     def set_data(self, data):
         if data.ndim > 1: d_mono = data.mean(axis=1)
         else: d_mono = data  
-        # Aggressive downsample for UI performance
+        # aggressive downsample for ui performance
         target_points = 1000
         step = max(1, len(d_mono) // target_points)
         self.data = d_mono[::step]
@@ -386,11 +385,11 @@ class WaveformWidget(QWidget):
             painter.end()
             return
 
-        # Prepare Paint on Pixmap
+        # prepare paint on pixmap
         painter = QPainter(self._static_pixmap)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        # Build Path
+        # build path
         path = QPainterPath()
         cy = h / 2
         path.moveTo(0, cy)
@@ -424,16 +423,16 @@ class WaveformWidget(QWidget):
 
     def paintEvent(self, event):
         painter = QPainter(self)
-        # Subtle container
+        # subtle container
         painter.setBrush(QColor(255, 255, 255, 50))
         painter.setPen(Qt.PenStyle.NoPen)
         painter.drawRoundedRect(self.rect(), 4, 4)
 
-        # Blit cached visuals (Fast)
+        # blit cached visuals (fast)
         if self._static_pixmap:
             painter.drawPixmap(0, 0, self._static_pixmap)
 
-        # Draw Dynamic Playhead
+        # draw dynamic playhead
         if self.data is not None and self.play_head_pos >= 0:
             px = int(self.play_head_pos * self.width())
             painter.setPen(QPen(QColor(63, 108, 155, 200), 1.5)) 
@@ -601,13 +600,11 @@ class MainWindow(QMainWindow):
         main_layout.setContentsMargins(15, 15, 15, 15)
         main_layout.setSpacing(15)
 
-        # Left Column
         self.viewport = QVBoxLayout()
         self.wave_view = WaveformWidget()
         self.wave_view.seek_requested.connect(self.seek_audio)
         self.wave_view.import_clicked.connect(self.open_file_dialog)
 
-        # Info & Clear Row
         info_row = QHBoxLayout()
         info_row.addStretch()
         
@@ -638,7 +635,7 @@ class MainWindow(QMainWindow):
         side_layout.setContentsMargins(15, 20, 15, 20)
         side_layout.setSpacing(6) 
 
-        side_layout.addWidget(AnimatedTitle("〜"))
+        side_layout.addWidget(AnimatedTitle("prism"))
         self.lbl_status = QLabel("status: idle")
         self.lbl_status.setObjectName("SubHeader")
         side_layout.addWidget(self.lbl_status)
@@ -659,8 +656,7 @@ class MainWindow(QMainWindow):
         side_layout.addWidget(ToggleRow("rand filter", "rand_filter", "vol/pan mod", "vol_pan", self.params))
 
         side_layout.addStretch()
-        
-        # Transport
+
         self.transport_frame = GlassFrame()
         transport_layout = QHBoxLayout(self.transport_frame)
         transport_layout.setContentsMargins(10, 20, 10, 20) 
@@ -677,8 +673,7 @@ class MainWindow(QMainWindow):
         transport_layout.addWidget(self.btn_play)
         transport_layout.addStretch()
         side_layout.addWidget(self.transport_frame)
-        
-        # Action Buttons (Side by Side)
+
         action_layout = QHBoxLayout()
         action_layout.setSpacing(10)
         
@@ -697,8 +692,7 @@ class MainWindow(QMainWindow):
         action_layout.addWidget(self.btn_process)
         action_layout.addWidget(self.btn_save)
         side_layout.addLayout(action_layout)
-        
-        # Add the Fading Save Indicator
+
         self.lbl_saved_msg = QLabel("")
         self.lbl_saved_msg.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.lbl_saved_msg.setStyleSheet("color: #3f6c9b; font-size: 11px; font-weight: bold;")
