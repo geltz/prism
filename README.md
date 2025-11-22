@@ -3,13 +3,11 @@ prism is a lightweight audio engine, waveform player and glitch texture generato
 it takes audio samples, slices them into microscopic pieces, and rearranges them into rhythmic 2-bar loops.  
 
 **sliders**    
-- grid density
-- spectral wash
-- bit crush
-- rate adjust
-- samplerate adjust
-- glue reverb
-
-**toggles**    
-- random bp/lp/hp filters
-- random vol/pan modulation 
+- grid density  
+- spectral wash  
+- bit crush  
+- rate adjust  
+- samplerate  
+- glue reverb  
+- filter mod  
+- vol/pan mod  
