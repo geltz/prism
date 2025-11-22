@@ -6,8 +6,8 @@ it takes audio samples, slices them into microscopic pieces, and rearranges them
 - grid density  
 - spectral wash  
 - bit crush  
-- rate adjust  
-- samplerate  
+- playback rate  
+- sample rate   
 - glue reverb  
 - filter mod  
 - vol/pan mod  
