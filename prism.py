@@ -373,6 +373,9 @@ class GlassFrame(QFrame):
 class WaveformWidget(QWidget):
     seek_requested = pyqtSignal(float)
     import_clicked = pyqtSignal()
+    # New signals to manage playback sync state
+    scrub_started = pyqtSignal()
+    scrub_ended = pyqtSignal()
 
     def __init__(self):
         super().__init__()
@@ -382,6 +385,7 @@ class WaveformWidget(QWidget):
         self.setMouseTracking(True) 
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self._static_pixmap = None
+        self.is_scrubbing = False # Track if user is currently dragging
 
     def set_data(self, data):
         if data.ndim > 1: d_mono = data.mean(axis=1)
@@ -394,27 +398,40 @@ class WaveformWidget(QWidget):
         self.update()
 
     def set_play_head(self, pos):
-        self.play_head_pos = max(0.0, min(1.0, pos))
-        self.update()
+        # Only update from external source (player) if user isn't scrubbing
+        if not self.is_scrubbing:
+            self.play_head_pos = max(0.0, min(1.0, pos))
+            self.update()
 
     def resizeEvent(self, event):
         self.update_static_waveform()
         super().resizeEvent(event)
 
     def mousePressEvent(self, event):
-        if self.data is None: self.import_clicked.emit()
-        else: self.handle_input(event.pos().x())
+        if self.data is None: 
+            self.import_clicked.emit()
+        elif event.button() == Qt.MouseButton.LeftButton:
+            self.is_scrubbing = True
+            self.scrub_started.emit()
+            self.handle_input(event.pos().x())
 
     def mouseMoveEvent(self, event):
-        if event.buttons() == Qt.MouseButton.LeftButton and self.data is not None:
+        if self.data is not None and self.is_scrubbing:
             self.handle_input(event.pos().x())
+
+    def mouseReleaseEvent(self, event):
+        if self.is_scrubbing:
+            self.is_scrubbing = False
+            self.scrub_ended.emit()
 
     def handle_input(self, x):
         w = self.width()
         if w > 0:
             pos_norm = max(0, min(w, x)) / w
-            self.set_play_head(pos_norm)
+            # Update visual IMMEDIATELY without waiting for player
+            self.play_head_pos = pos_norm
             self.seek_requested.emit(pos_norm)
+            self.update()
 
     def update_static_waveform(self):
         w, h = self.width(), self.height()
@@ -446,7 +463,6 @@ class WaveformWidget(QWidget):
         path.lineTo(w, cy)
         path.lineTo(0, cy)
         
-        # Standard Cool Blue Gradient
         grad = QLinearGradient(0, 0, 0, h)
         base_color = QColor(63, 108, 155)
         base_color.setAlpha(0)
@@ -467,12 +483,10 @@ class WaveformWidget(QWidget):
 
     def paintEvent(self, event):
         painter = QPainter(self)
-        # 1. Background
         painter.setBrush(QColor(255, 255, 255, 50))
         painter.setPen(Qt.PenStyle.NoPen)
         painter.drawRoundedRect(self.rect(), 4, 4)
 
-        # 2. Static Waveform
         if self._static_pixmap:
             painter.drawPixmap(0, 0, self._static_pixmap)
 
@@ -480,7 +494,7 @@ class WaveformWidget(QWidget):
             px = int(self.play_head_pos * self.width())
             ripple_w = 80 
             
-            # 3. Dynamic Color Wave Ripple
+            # --- Draw Ripple Effect (unchanged) ---
             rect = QRectF(px - ripple_w, 0, ripple_w * 2, self.height())
             source_rect = rect.toRect().intersected(self.rect())
             
@@ -488,17 +502,12 @@ class WaveformWidget(QWidget):
                 wave_slice = self._static_pixmap.copy(source_rect)
                 slice_painter = QPainter(wave_slice)
                 slice_painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
-                
-                # Dynamic Hue based on position (Color Wave)
-                # Cycles through spectrum as head moves
                 hue = (self.play_head_pos * 0.8 + 0.55) % 1.0 
                 
                 grad_center = px - source_rect.x()
                 r_grad = QLinearGradient(grad_center - ripple_w, 0, grad_center + ripple_w, 0)
-                
                 c_center = QColor.fromHslF(hue, 0.85, 0.6, 1.0)
                 c_edge = QColor.fromHslF(hue, 0.85, 0.6, 0.0)
-                
                 r_grad.setColorAt(0.0, c_edge)
                 r_grad.setColorAt(0.5, c_center)
                 r_grad.setColorAt(1.0, c_edge)
@@ -506,15 +515,30 @@ class WaveformWidget(QWidget):
                 slice_painter.fillRect(wave_slice.rect(), r_grad)
                 slice_painter.end()
                 
-                # Draw "Screen" to make it glow/light up
                 painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Screen)
                 painter.drawPixmap(source_rect.topLeft(), wave_slice)
                 painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
 
-            # 4. Playhead Line
+            # --- NEW: Gradient Fading Playhead ---
             line_hue = (self.play_head_pos * 0.8 + 0.55) % 1.0
-            painter.setPen(QPen(QColor.fromHslF(line_hue, 0.6, 0.4, 0.9), 1.5)) 
-            painter.drawLine(px, 10, px, self.height() - 10)
+            
+            # Create a vertical gradient for the line itself
+            h = self.height()
+            line_grad = QLinearGradient(px, 0, px, h)
+            
+            col_core = QColor.fromHslF(line_hue, 0.6, 0.4, 0.9) # Core color
+            col_trans = QColor.fromHslF(line_hue, 0.6, 0.4, 0.0) # Transparent
+            
+            # Stops: Fade in at 10%, Fade out at 90%
+            line_grad.setColorAt(0.0, col_trans)
+            line_grad.setColorAt(0.15, col_core)
+            line_grad.setColorAt(0.85, col_core)
+            line_grad.setColorAt(1.0, col_trans)
+            
+            painter.setBrush(line_grad)
+            painter.setPen(Qt.PenStyle.NoPen)
+            # Draw a 2px wide rectangle instead of a 1px line
+            painter.drawRect(QRectF(px - 1, 0, 2, h))
 
 def setup_row_layout(widget):
     layout = QVBoxLayout(widget)
@@ -900,11 +924,17 @@ class MainWindow(QMainWindow):
         self.player = QMediaPlayer()
         self.audio_output = QAudioOutput()
         self.player.setAudioOutput(self.audio_output)
-        self.player.positionChanged.connect(self.update_playhead)
+
         self.player.mediaStatusChanged.connect(self.media_status_changed)
+
+        # High frequency timer
+        self.anim_timer = QTimer(self)
+        self.anim_timer.setInterval(7) # ~144 FPS
+        self.anim_timer.timeout.connect(self.high_freq_update)
 
         central = QWidget()
         self.setCentralWidget(central)
+        
         main_layout = QHBoxLayout(central)
         main_layout.setContentsMargins(15, 15, 15, 15)
         main_layout.setSpacing(15)
@@ -913,6 +943,9 @@ class MainWindow(QMainWindow):
         self.wave_view = WaveformWidget()
         self.wave_view.seek_requested.connect(self.seek_audio)
         self.wave_view.import_clicked.connect(self.open_file_dialog)
+
+        self.wave_view.scrub_started.connect(self.anim_timer.stop)
+        self.wave_view.scrub_ended.connect(self.resume_sync)
 
         info_row = QHBoxLayout()
         info_row.addStretch()
@@ -1080,26 +1113,38 @@ class MainWindow(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "error", f"could not load file: {e}")
 
+    def resume_sync(self):
+        if self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
+            self.anim_timer.start()
+
+    # Update Loop
+    def high_freq_update(self):
+        duration = self.player.duration()
+        if duration > 0: 
+            # Get position directly from player
+            pos = self.player.position()
+            self.wave_view.set_play_head(pos / duration)
+
     def toggle_playback(self):
         if self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
             self.player.pause()
+            self.anim_timer.stop() # Stop UI updates
             self.btn_play.setText("▶")
         else:
             self.player.play()
+            self.anim_timer.start() # Start UI updates
             self.btn_play.setText("||")
 
     def stop_playback(self):
         self.player.stop()
+        self.anim_timer.stop() # Stop UI updates
         self.btn_play.setText("▶")
         self.wave_view.set_play_head(0)
 
-    def update_playhead(self, position_ms):
-        duration = self.player.duration()
-        if duration > 0: self.wave_view.set_play_head(position_ms / duration)
-
     def seek_audio(self, pos_norm):
         duration = self.player.duration()
-        if duration > 0: self.player.setPosition(int(pos_norm * duration))
+        if duration > 0: 
+            self.player.setPosition(int(pos_norm * duration))
 
     def media_status_changed(self, status):
         if status == QMediaPlayer.MediaStatus.EndOfMedia:
