@@ -236,15 +236,19 @@ class ProcessThread(QThread):
     finished_ok = pyqtSignal(object, int) 
     error = pyqtSignal(str)
 
-    def __init__(self, file_path, params):
+    # CHANGED: Receive raw audio data instead of a file path
+    def __init__(self, audio_data, sr, params):
         super().__init__()
-        self.path, self.params = file_path, params
+        self.audio = audio_data
+        self.sr = sr
+        self.params = params
 
     def run(self):
         try:
-            audio, sr = AudioEngine.load_file(self.path)
-            processed = AudioEngine.process(audio, sr, self.params)
-            self.finished_ok.emit(processed, sr)
+            # CHANGED: Process the passed audio data directly
+            # We copy to ensure the original data in memory is never touched by reference
+            processed = AudioEngine.process(self.audio.copy(), self.sr, self.params)
+            self.finished_ok.emit(processed, self.sr)
         except Exception as e:
             self.error.emit(str(e))
 
@@ -816,6 +820,7 @@ class MainWindow(QMainWindow):
         self.resize(900, 600)
         self.setAcceptDrops(True)
         self.file_path = None
+        self.original_audio = None
         self.processed_audio = None
         self.sr = 44100
         self.temp_file = None
@@ -982,6 +987,7 @@ class MainWindow(QMainWindow):
         self.stop_playback()
         self.player.setSource(QUrl())
         self.file_path = None
+        self.original_audio = None
         self.processed_audio = None
         self.wave_view.data = None
         self.wave_view.update_static_waveform()
@@ -1004,6 +1010,8 @@ class MainWindow(QMainWindow):
         try:
             data, sr = AudioEngine.load_file(path)
             self.sr = sr
+            self.original_audio = data
+            
             self.player.setSource(QUrl.fromLocalFile(path))
             display_data = data[:sr*30] if len(data) > sr*30 else data
             self.wave_view.set_data(display_data)
@@ -1052,12 +1060,16 @@ class MainWindow(QMainWindow):
             self.wave_view.set_play_head(0)
 
     def start_processing(self):
-        if not self.file_path: return
+        # Check for original_audio instead of file_path
+        if self.original_audio is None: return
+        
         self.stop_playback()
         self.lbl_status.setText("status: processing...")
         self.lbl_status.setStyleSheet("color: #7aa6d4; font-weight: bold;")
         self.set_ui_locked(True)
-        self.thread = ProcessThread(self.file_path, self.params.copy())
+        
+        # Pass the stored original_audio and current SR to the thread
+        self.thread = ProcessThread(self.original_audio, self.sr, self.params.copy())
         self.thread.finished_ok.connect(self.processing_done)
         self.thread.error.connect(self.processing_error)
         self.thread.start()
@@ -1074,6 +1086,12 @@ class MainWindow(QMainWindow):
             AudioEngine.save_file(temp_path, data, sr)
             self.temp_file = temp_path
             self.player.setSource(QUrl.fromLocalFile(temp_path))
+            
+            # Auto-play logic
+            self.player.play()
+            self.btn_play.setText("||")
+            self.anim_timer.start()
+            
         except Exception as e: print(f"Temp file error: {e}")
 
     def processing_error(self, msg):
