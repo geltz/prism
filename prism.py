@@ -74,9 +74,9 @@ class AudioEngine:
         return slices
 
     @staticmethod
-    def generate_2bar_loop(slice_lib, sr, density):
+    def generate_2bar_loop(slice_lib, sr, density, bpm):
         rng = np.random.default_rng()
-        beat_dur = 60.0 / BPM
+        beat_dur = 60.0 / bpm
         samples_per_beat = int(beat_dur * sr)
         bar_samples = samples_per_beat * 4
         loop_samples = bar_samples * 2
@@ -102,11 +102,13 @@ class AudioEngine:
             cursor += dur
         return out
 
+  
+
     @staticmethod
-    def apply_rand_filter(data, sr, intensity):
+    def apply_rand_filter(data, sr, intensity, bpm):
         if intensity <= 0.01: return data
         rng = np.random.default_rng()
-        step = int((60/BPM/4) * sr)
+        step = int((60/bpm/4) * sr)
         y = data.copy()
         total_len = len(y)
         
@@ -143,10 +145,10 @@ class AudioEngine:
         return y
 
     @staticmethod
-    def apply_vol_pan(data, sr, intensity):
+    def apply_vol_pan(data, sr, intensity, bpm):
         if intensity <= 0.01: return data
         rng = np.random.default_rng()
-        step = int((60/BPM/4) * sr)
+        step = int((60/bpm/4) * sr)
         if data.ndim == 1:
             left = data.copy()
             right = data.copy()
@@ -216,12 +218,13 @@ class AudioEngine:
 
     @staticmethod
     def process(audio, sr, params):
+        bpm = params.get('bpm', 120.0)
         slices = AudioEngine.make_slice_library(audio, sr)
-        y = AudioEngine.generate_2bar_loop(slices, sr, density=params['glitch'])
+        y = AudioEngine.generate_2bar_loop(slices, sr, density=params['glitch'], bpm=bpm)
         
         # Updated calls to use float sliders
-        y = AudioEngine.apply_rand_filter(y, sr, intensity=params['filter_amt'])
-        y = AudioEngine.apply_vol_pan(y, sr, intensity=params['vol_pan_amt'])
+        y = AudioEngine.apply_rand_filter(y, sr, intensity=params['filter_amt'], bpm=bpm)
+        y = AudioEngine.apply_vol_pan(y, sr, intensity=params['vol_pan_amt'], bpm=bpm)
         
         # Ensure stereo if it wasn't panned
         if y.ndim == 1: y = np.column_stack((y, y))
@@ -854,6 +857,29 @@ class SampleRateRow(QWidget):
         self.lbl_val.setText(f"{val} Hz")
         self.parent_data[self.key] = float(val)
 
+class BpmControlRow(QWidget):
+    def __init__(self, label, key, parent_data):
+        super().__init__()
+        self.key, self.parent_data = key, parent_data
+        layout = setup_row_layout(self)
+        header = QHBoxLayout()
+        self.lbl_name = QLabel(label.lower())
+        self.lbl_val = QLabel("120")
+        self.lbl_val.setStyleSheet("color: #3f6c9b; font-weight: bold;")
+        header.addWidget(self.lbl_name)
+        header.addStretch()
+        header.addWidget(self.lbl_val)
+        self.slider = PrismSlider(Qt.Orientation.Horizontal)
+        self.slider.setRange(60, 200)
+        self.slider.setValue(120)
+        self.slider.valueChanged.connect(self.update_val)
+        layout.addLayout(header)
+        layout.addWidget(self.slider)
+        
+    def update_val(self, val):
+        self.lbl_val.setText(f"{val}")
+        self.parent_data[self.key] = float(val)
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -868,7 +894,7 @@ class MainWindow(QMainWindow):
         self.params = {
             'glitch': 0.5, 'wash': 0.0, 'crush': 0.0, 'reverb': 0.0, 
             'sr_select': 44100.0, 'rate': 1.0, # sr_select default is now 44100.0
-            'filter_amt': 0.0, 'vol_pan_amt': 0.0
+            'filter_amt': 0.0, 'vol_pan_amt': 0.0, 'bpm': 120.0
         }
         
         self.player = QMediaPlayer()
@@ -929,12 +955,14 @@ class MainWindow(QMainWindow):
         side_layout.addSpacing(5)
 
         side_layout.addWidget(ControlRow("grid density", "glitch", self.params))
+        side_layout.addWidget(BpmControlRow("bpm", "bpm", self.params))
         
-        side_layout.addWidget(ControlRow("spectral wash", "wash", self.params))
         side_layout.addWidget(ControlRow("bit crush", "crush", self.params))
         side_layout.addWidget(RateControlRow("playback rate", "rate", self.params))
 
         side_layout.addWidget(SampleRateRow("sample rate", "sr_select", self.params))
+
+        side_layout.addWidget(ControlRow("spectral wash", "wash", self.params))
         side_layout.addWidget(ControlRow("glue reverb", "reverb", self.params))
 
         side_layout.addWidget(ControlRow("filter mod", "filter_amt", self.params))
