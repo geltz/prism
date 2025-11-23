@@ -283,7 +283,7 @@ STYLES = """
         color: #d9534f; 
         border-radius: 10px;
         padding: 2px 10px; 
-        font-size: 11px; 
+        font-size: 12px; 
         font-weight: bold; 
     }
     QPushButton#ClearBtn:hover { background-color: #d9534f; color: white; }
@@ -865,6 +865,7 @@ class MainWindow(QMainWindow):
         
         self.btn_clear = QPushButton("clear")
         self.btn_clear.setObjectName("ClearBtn")
+        self.btn_clear.setFixedSize(60, 30)
         self.btn_clear.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_clear.setVisible(False)
         self.btn_clear.clicked.connect(self.clear_state)
