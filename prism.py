@@ -720,6 +720,8 @@ class RainbowLabel(QLabel):
         self.timer.timeout.connect(self.animate)
         self.timer.start(30)
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        # Ensure it doesn't take up too much vertical space, matching original label behavior
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
 
     def animate(self):
         self.phase = (self.phase + 0.005) % 1.0
@@ -731,38 +733,33 @@ class RainbowLabel(QLabel):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
-        # Create Gradient Brush for Text
         rect = self.rect()
-        grad = QLinearGradient(0, 0, rect.width(), 0)
         
-        # Using a slightly darker/more saturated version of the button colors
-        # so text is readable against the white/glass background
+        # Same gradient logic as buttons, but darker Lightness (0.55) for text readability
+        grad = QLinearGradient(0, 0, rect.width(), 0)
         for i in range(4):
             t = i / 3.0
             hue = (self.phase + (t * 0.5)) % 1.0
-            # S: 0.7, L: 0.6 (Darker than button's L:0.92)
-            col = QColor.fromHslF(hue, 0.7, 0.6, 1.0) 
+            col = QColor.fromHslF(hue, 0.75, 0.55, 1.0) 
             grad.setColorAt(t, col)
             
-        font = QFont("Segoe UI", 11)
+        # MATCHING PREVIOUS STYLING: 11px, Bold, Segoe UI
+        font = QFont("Segoe UI")
+        font.setPixelSize(11) # Explicitly 11px to match "font-size: 11px"
         font.setBold(True)
-        font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 1.0)
         
         painter.setFont(font)
         
-        # Draw gradient text using PainterPath clipping or just simple pen if possible
-        # Since Qt text gradient via Pen is tricky, we use a PainterPath filled with brush
-        path = QPainterPath()
-        
-        # Center the text manually
+        # Center text manually to align with gradient brush
         fm = self.fontMetrics()
         txt_w = fm.horizontalAdvance(self.text())
-        txt_h = fm.ascent()
+        
+        # precise vertical centering
         x = (rect.width() - txt_w) / 2
-        y = (rect.height() + txt_h) / 2 - fm.descent()
+        y = (rect.height() + fm.capHeight()) / 2 
         
+        path = QPainterPath()
         path.addText(x, y, font, self.text())
-        
         painter.fillPath(path, QBrush(grad))
 
 
@@ -947,7 +944,6 @@ class MainWindow(QMainWindow):
         action_layout.addWidget(self.btn_save)
         side_layout.addLayout(action_layout)
 
-        # REPLACED QLabel with RainbowLabel
         self.lbl_saved_msg = RainbowLabel("")
         
         self.fade_effect = QGraphicsOpacityEffect(self.lbl_saved_msg)
