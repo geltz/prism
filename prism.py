@@ -86,8 +86,6 @@ class AudioEngine:
         
         while cursor < loop_samples:
             r = rng.random()
-            # Modified probabilities to prioritize longer chops (grid_mult 4)
-            # and make rapid 16th note stutters (grid_mult 1) less aggressive
             if r < (0.1 + 0.4 * density): grid_mult = 1 
             elif r < (0.4 + 0.4 * density): grid_mult = 2 
             else: grid_mult = 4 
@@ -102,8 +100,6 @@ class AudioEngine:
             cursor += dur
         return out
 
-  
-
     @staticmethod
     def apply_rand_filter(data, sr, intensity, bpm):
         if intensity <= 0.01: return data
@@ -113,15 +109,10 @@ class AudioEngine:
         total_len = len(y)
         
         for i in range(0, total_len, step):
-            # Intensity determines probability of filter occuring on a specific step
-            # At 1.0, it happens every step. At 0.2, it happens 20% of the time.
             if rng.random() > intensity: continue
-            
             end = min(i + step, total_len)
             chunk = y[i:end]
             ftype = rng.choice(['lp', 'hp', 'bp'])
-            
-            # Intensity also slightly affects resonance/bandwidth
             q_factor = 0.5 + (intensity * 1.5) 
             
             if ftype == 'lp':
@@ -132,7 +123,6 @@ class AudioEngine:
                 sos = signal.butter(2, freq, 'high', fs=sr, output='sos')
             else: 
                 center = rng.uniform(400, 3000)
-                # Higher intensity = narrower band
                 width = 0.4 if intensity > 0.8 else 0.8
                 sos = signal.butter(2, [center*(1-width/2), center*(1+width/2)], 'band', fs=sr, output='sos')
                 
@@ -159,17 +149,10 @@ class AudioEngine:
         
         for i in range(0, total_len, step):
             end = min(i + step, total_len)
-            
-            # Volume drops deeper as intensity increases
-            # max drop at intensity 1.0 is down to 0.4
             vol_drop = rng.uniform(0.0, 0.6) * intensity
             vol = 1.0 - vol_drop
-            
-            # Pan spreads wider as intensity increases
-            # max pan at intensity 1.0 is -0.9 to 0.9
             pan_width = 0.9 * intensity
             pan = rng.uniform(-pan_width, pan_width)
-            
             p_ang = (pan + 1) * (np.pi / 4)
             g_left = np.cos(p_ang) * vol
             g_right = np.sin(p_ang) * vol
@@ -180,15 +163,25 @@ class AudioEngine:
 
     @staticmethod
     def bitcrush(data, sr, depth=0.0):
+        """
+        Made smoother: 
+        1. Reduced max sample reduction (step) from 20 to 6.
+        2. Reduced max bit depth reduction.
+        """
         y = data.copy()
         if depth > 0:
-            quant = 2 ** (16 - (depth * 12))
+            # Gentler Quantization: Max depth drops to ~8 bits instead of ~4 bits
+            # (16 - 8) = 8 bits at max intensity
+            quant = 2 ** (16 - (depth * 8)) 
             y = np.round(y * quant) / quant
+            
             rate_div = depth 
             if rate_div > 0:
-                step = int(1 + (rate_div * 20))
+                # Gentler Downsample: Max step is 6 instead of 21
+                step = int(1 + (rate_div * 5))
                 if y.ndim == 2:
                     for ch in range(2):
+                        # Simple hold
                         y[:, ch] = np.repeat(y[::step, ch], step)[:len(y)]
                 else:
                     y = np.repeat(y[::step], step)[:len(y)]
@@ -196,14 +189,10 @@ class AudioEngine:
 
     @staticmethod
     def apply_samplerate(data, original_sr, target_sr):
-        # target_sr is now a continuous float/int value (e.g. 24050)
         if target_sr >= original_sr: return data
-        
-        # Safety check
         target_sr = max(1000, target_sr)
-        
         num_samples_low = int(len(data) * (target_sr / original_sr))
-        if num_samples_low < 2: return data # Prevent empty arrays
+        if num_samples_low < 2: return data 
 
         if data.ndim == 2:
             l_lo = signal.resample(data[:, 0], num_samples_low)
@@ -222,11 +211,9 @@ class AudioEngine:
         slices = AudioEngine.make_slice_library(audio, sr)
         y = AudioEngine.generate_2bar_loop(slices, sr, density=params['glitch'], bpm=bpm)
         
-        # Updated calls to use float sliders
         y = AudioEngine.apply_rand_filter(y, sr, intensity=params['filter_amt'], bpm=bpm)
         y = AudioEngine.apply_vol_pan(y, sr, intensity=params['vol_pan_amt'], bpm=bpm)
         
-        # Ensure stereo if it wasn't panned
         if y.ndim == 1: y = np.column_stack((y, y))
 
         y = AudioEngine.bitcrush(y, sr, depth=params['crush'])
@@ -266,7 +253,6 @@ STYLES = """
     QLabel { color: #405165; font-family: 'Segoe UI', sans-serif; }
     QLabel#SubHeader { color: #7aa6d4; font-size: 12px; font-weight: bold; letter-spacing: 1px; }
     
-    /* File Label Enhanced */
     QLabel#FileLabel { 
         color: #3f6c9b; 
         font-size: 14px; 
@@ -306,7 +292,6 @@ STYLES = """
 class PrismLogo(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        # Compact height
         self.setMinimumHeight(60)
         self.phase = 0.0
         self.timer = QTimer(self)
@@ -322,37 +307,28 @@ class PrismLogo(QWidget):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         w, h = self.width(), self.height()
         cx, cy = w / 2, h / 2
-        
-        # Scaled down triangle
         tri_size = 20
-        
         p1 = QPointF(cx, cy - tri_size)
         p2 = QPointF(cx + tri_size * 0.866, cy + tri_size * 0.5)
         p3 = QPointF(cx - tri_size * 0.866, cy + tri_size * 0.5)
         triangle = QPolygonF([p1, p2, p3])
 
-        # 1. Beam
         painter.setPen(QPen(QColor(255, 255, 255, 200), 2))
         painter.drawLine(QPointF(0, cy + 5), QPointF(cx - 8, cy + 2))
 
-        # 2. Rainbow
         for i in range(7):
             hue = i / 7.0
             pulse = (math.sin(self.phase * 6.28 + i) + 1) / 2
             alpha = int(100 + 155 * pulse)
             col = QColor.fromHslF(hue, 0.8, 0.6, alpha/255.0)
-            
             painter.setPen(QPen(col, 1.5))
             origin = QPointF(cx + 6, cy)
-            
-            angle_deg = -25 + (i * 8) # Slightly tighter spread
+            angle_deg = -25 + (i * 8) 
             angle_rad = math.radians(angle_deg)
             dest_x = w
             dest_y = cy + math.tan(angle_rad) * (w - cx)
-            
             painter.drawLine(origin, QPointF(dest_x, dest_y))
 
-        # 3. Prism
         grad = QLinearGradient(p1, p3)
         grad.setColorAt(0.0, QColor(255, 255, 255, 100))
         grad.setColorAt(1.0, QColor(255, 255, 255, 10))
@@ -373,7 +349,6 @@ class GlassFrame(QFrame):
 class WaveformWidget(QWidget):
     seek_requested = pyqtSignal(float)
     import_clicked = pyqtSignal()
-    # New signals to manage playback sync state
     scrub_started = pyqtSignal()
     scrub_ended = pyqtSignal()
 
@@ -385,7 +360,7 @@ class WaveformWidget(QWidget):
         self.setMouseTracking(True) 
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self._static_pixmap = None
-        self.is_scrubbing = False # Track if user is currently dragging
+        self.is_scrubbing = False 
 
     def set_data(self, data):
         if data.ndim > 1: d_mono = data.mean(axis=1)
@@ -398,7 +373,6 @@ class WaveformWidget(QWidget):
         self.update()
 
     def set_play_head(self, pos):
-        # Only update from external source (player) if user isn't scrubbing
         if not self.is_scrubbing:
             self.play_head_pos = max(0.0, min(1.0, pos))
             self.update()
@@ -428,7 +402,6 @@ class WaveformWidget(QWidget):
         w = self.width()
         if w > 0:
             pos_norm = max(0, min(w, x)) / w
-            # Update visual IMMEDIATELY without waiting for player
             self.play_head_pos = pos_norm
             self.seek_requested.emit(pos_norm)
             self.update()
@@ -493,8 +466,6 @@ class WaveformWidget(QWidget):
         if self.data is not None and self.play_head_pos >= 0 and self._static_pixmap:
             px = int(self.play_head_pos * self.width())
             ripple_w = 80 
-            
-            # --- Draw Ripple Effect (unchanged) ---
             rect = QRectF(px - ripple_w, 0, ripple_w * 2, self.height())
             source_rect = rect.toRect().intersected(self.rect())
             
@@ -503,7 +474,6 @@ class WaveformWidget(QWidget):
                 slice_painter = QPainter(wave_slice)
                 slice_painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
                 hue = (self.play_head_pos * 0.8 + 0.55) % 1.0 
-                
                 grad_center = px - source_rect.x()
                 r_grad = QLinearGradient(grad_center - ripple_w, 0, grad_center + ripple_w, 0)
                 c_center = QColor.fromHslF(hue, 0.85, 0.6, 1.0)
@@ -511,7 +481,6 @@ class WaveformWidget(QWidget):
                 r_grad.setColorAt(0.0, c_edge)
                 r_grad.setColorAt(0.5, c_center)
                 r_grad.setColorAt(1.0, c_edge)
-                
                 slice_painter.fillRect(wave_slice.rect(), r_grad)
                 slice_painter.end()
                 
@@ -519,30 +488,21 @@ class WaveformWidget(QWidget):
                 painter.drawPixmap(source_rect.topLeft(), wave_slice)
                 painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
 
-            # --- NEW: Gradient Fading Playhead ---
             line_hue = (self.play_head_pos * 0.8 + 0.55) % 1.0
-            
-            # Create a vertical gradient for the line itself
             h = self.height()
             line_grad = QLinearGradient(px, 0, px, h)
-            
-            col_core = QColor.fromHslF(line_hue, 0.6, 0.4, 0.9) # Core color
-            col_trans = QColor.fromHslF(line_hue, 0.6, 0.4, 0.0) # Transparent
-            
-            # Stops: Fade in at 10%, Fade out at 90%
+            col_core = QColor.fromHslF(line_hue, 0.6, 0.4, 0.9) 
+            col_trans = QColor.fromHslF(line_hue, 0.6, 0.4, 0.0) 
             line_grad.setColorAt(0.0, col_trans)
             line_grad.setColorAt(0.15, col_core)
             line_grad.setColorAt(0.85, col_core)
             line_grad.setColorAt(1.0, col_trans)
-            
             painter.setBrush(line_grad)
             painter.setPen(Qt.PenStyle.NoPen)
-            # Draw a 2px wide rectangle instead of a 1px line
             painter.drawRect(QRectF(px - 1, 0, 2, h))
 
 def setup_row_layout(widget):
     layout = QVBoxLayout(widget)
-    # Ultra-compact margins
     layout.setContentsMargins(0, 0, 0, 0) 
     layout.setSpacing(0)
     return layout
@@ -551,9 +511,7 @@ class PrismSlider(QSlider):
     def __init__(self, orientation=Qt.Orientation.Horizontal, parent=None):
         super().__init__(orientation, parent)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        # Compact height
         self.setFixedHeight(24)
-        
         self.phase = 0.0
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.animate)
@@ -563,7 +521,6 @@ class PrismSlider(QSlider):
         self.phase = (self.phase + 0.02) % 1.0
         self.update()
 
-    # --- Custom Input Handling to Fix Click Bugs ---
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             val = self.pixel_to_value(event.pos().x())
@@ -579,57 +536,39 @@ class PrismSlider(QSlider):
     def pixel_to_value(self, x):
         w = self.width()
         if w == 0: return 0
-        # Map X directly to range 0..1
         norm = max(0.0, min(1.0, x / w))
         return int(self.minimum() + norm * (self.maximum() - self.minimum()))
-    # -----------------------------------------------
 
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        
         rect = self.rect()
-        # Groove
         groove_h = 4
         groove_y = rect.height() / 2 - groove_h / 2
         groove_rect = QRectF(rect.x(), groove_y, rect.width(), groove_h)
-        
         painter.setBrush(QColor(63, 108, 155, 30))
         painter.setPen(Qt.PenStyle.NoPen)
         painter.drawRoundedRect(groove_rect, 2, 2)
-        
         val_norm = (self.value() - self.minimum()) / (self.maximum() - self.minimum()) if (self.maximum() > self.minimum()) else 0
-        
-        # Hue Mapping: 0.0 to 0.5 (Red to Cyan)
         fill_hue = val_norm * 0.5
-        
-        # SUBTLER COLORS: Saturation 0.45, Lightness 0.7
         fill_color = QColor.fromHslF(fill_hue, 0.45, 0.7, 1.0)
-        
         fill_rect = QRectF(rect.x(), groove_y, rect.width() * val_norm, groove_h)
         painter.setBrush(fill_color)
         painter.drawRoundedRect(fill_rect, 2, 2)
-        
-        # Handle
         handle_size = 16
         cx = rect.x() + val_norm * (rect.width() - handle_size) + handle_size / 2
         cy = rect.height() / 2
-        
         h_half = handle_size / 2
         p1 = QPointF(cx, cy - h_half)
         p2 = QPointF(cx - h_half, cy + h_half)
         p3 = QPointF(cx + h_half, cy + h_half)
-        
         grad = QLinearGradient(p2, p3)
         h1 = (self.phase) % 1.0
         h2 = (self.phase + 0.33) % 1.0
         h3 = (self.phase + 0.66) % 1.0
-        
-        # Keeping handle gradient slightly vibrant but matching the softness
         grad.setColorAt(0.0, QColor.fromHslF(h1, 0.6, 0.65, 1.0)) 
         grad.setColorAt(0.5, QColor.fromHslF(h2, 0.6, 0.65, 1.0))
         grad.setColorAt(1.0, QColor.fromHslF(h3, 0.6, 0.65, 1.0))
-        
         painter.setBrush(grad)
         painter.setPen(QPen(QColor(255, 255, 255), 1.5))
         painter.drawPolygon(QPolygonF([p1, p2, p3]))
@@ -663,66 +602,23 @@ class RateControlRow(QWidget):
         layout = setup_row_layout(self)
         header = QHBoxLayout()
         self.lbl_name = QLabel(label.lower())
-        self.lbl_val = QLabel("1.0x")
+        self.lbl_val = QLabel("1.00x")
         self.lbl_val.setStyleSheet("color: #3f6c9b; font-weight: bold;")
         header.addWidget(self.lbl_name)
         header.addStretch()
         header.addWidget(self.lbl_val)
         self.slider = PrismSlider(Qt.Orientation.Horizontal)
-        self.slider.setRange(5, 20)
-        self.slider.setValue(10)
+        # Free rate range: 500 (0.5x) to 2000 (2.0x)
+        self.slider.setRange(500, 2000)
+        self.slider.setValue(1000)
         self.slider.valueChanged.connect(self.update_val)
         layout.addLayout(header)
         layout.addWidget(self.slider)
         
     def update_val(self, val):
-        real_val = val / 10.0
-        self.lbl_val.setText(f"{real_val:.1f}x")
+        real_val = val / 1000.0
+        self.lbl_val.setText(f"{real_val:.2f}x")
         self.parent_data[self.key] = real_val
-
-class DiscreteControlRow(QWidget):
-    def __init__(self, label, key, parent_data, values):
-        super().__init__()
-        self.key = key
-        self.parent_data = parent_data
-        self.values = values
-        layout = setup_row_layout(self)
-        header = QHBoxLayout()
-        self.lbl_name = QLabel(label.lower())
-        self.lbl_val = QLabel(f"{values[-1]}")
-        self.lbl_val.setStyleSheet("color: #3f6c9b; font-weight: bold;")
-        header.addWidget(self.lbl_name)
-        header.addStretch()
-        header.addWidget(self.lbl_val)
-        self.slider = PrismSlider(Qt.Orientation.Horizontal)
-        self.slider.setRange(0, len(values) - 1)
-        self.slider.setValue(len(values) - 1)
-        self.slider.valueChanged.connect(self.update_val)
-        layout.addLayout(header)
-        layout.addWidget(self.slider)
-        
-    def update_val(self, index):
-        real_val = self.values[index]
-        self.lbl_val.setText(f"{real_val}")
-        self.parent_data[self.key] = float(index)
-
-class ToggleRow(QWidget):
-    def __init__(self, label_1, key_1, label_2, key_2, parent_data):
-        super().__init__()
-        self.parent_data = parent_data
-        self.key1, self.key2 = key_1, key_2
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, 5, 0, 5)
-        self.cb1 = QCheckBox(label_1.lower())
-        self.cb1.stateChanged.connect(self.update_1)
-        self.cb2 = QCheckBox(label_2.lower())
-        self.cb2.stateChanged.connect(self.update_2)
-        layout.addWidget(self.cb1)
-        layout.addStretch()
-        layout.addWidget(self.cb2)
-        
-    def update_1(self, state): self.parent_data[self.key1] = (state == 2)
-    def update_2(self, state): self.parent_data[self.key2] = (state == 2)
 
 class MediaButton(QPushButton):
     def __init__(self, text, parent=None):
@@ -738,17 +634,12 @@ class MediaButton(QPushButton):
         if self.underMouse(): bg_color = QColor(255, 255, 255, 255)
         if self.isDown(): bg_color = QColor(200, 220, 240)
         if not self.isEnabled(): bg_color = QColor(255, 255, 255, 100)
-        
-        # Draw larger rounded rect
         painter.setBrush(bg_color)
         painter.setPen(Qt.PenStyle.NoPen)
         painter.drawRoundedRect(self.rect(), 25, 25) 
-
         icon_color = QColor("#3f6c9b") if self.isEnabled() else QColor("#a0b0c0")
         painter.setBrush(icon_color)
         cx, cy, txt = self.width() / 2, self.height() / 2, self.text()
-        
-        # Scaled up drawing coordinates
         if "▶" in txt:
             path = QPainterPath()
             path.moveTo(cx - 6, cy - 9) 
@@ -761,26 +652,6 @@ class MediaButton(QPushButton):
             painter.drawRoundedRect(QRectF(cx + 3, cy - 9, 6, 18), 2, 2)
         elif "■" in txt:
             painter.drawRoundedRect(QRectF(cx - 8, cy - 8, 16, 16), 3, 3)
-
-class TripleToggleRow(QWidget):
-    def __init__(self, items, parent_data):
-        """
-        items: list of tuples [(label, key), (label, key), ...]
-        """
-        super().__init__()
-        self.parent_data = parent_data
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, 5, 0, 5)
-        layout.setSpacing(15)
-        
-        for label, key in items:
-            cb = QCheckBox(label)
-            cb.setChecked(bool(parent_data.get(key, False)))
-            cb.toggled.connect(lambda checked, k=key: self.update_val(k, checked))
-            layout.addWidget(cb)
-            
-    def update_val(self, key, checked):
-        self.parent_data[key] = checked
 
 class RainbowButton(QPushButton):
     def __init__(self, text, parent=None):
@@ -809,16 +680,11 @@ class RainbowButton(QPushButton):
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        
         rect = self.rect()
-        
         if self.isEnabled():
-            # 1. Base
             painter.setBrush(QColor("white"))
             painter.setPen(Qt.PenStyle.NoPen)
             painter.drawRoundedRect(rect, 6, 6)
-
-            # 2. Pearlescent Flow
             grad = QLinearGradient(0, 0, rect.width(), 0)
             for i in range(4):
                 t = i / 3.0
@@ -826,34 +692,79 @@ class RainbowButton(QPushButton):
                 opacity = 200 if self.is_hovering else 150
                 col = QColor.fromHslF(hue, 0.6, 0.92, opacity/255.0)
                 grad.setColorAt(t, col)
-
             painter.setBrush(grad)
             painter.drawRoundedRect(rect, 6, 6)
-            
-            # 3. Border
             border_col = QColor.fromHslF(self.phase, 0.5, 0.8, 1.0)
             painter.setPen(QPen(border_col, 1))
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawRoundedRect(rect, 6, 6)
-
-            # 4. Text Color - Lighter Slate Blue
             text_col = QColor("#6a8cb3") 
-            
         else:
             painter.setBrush(QColor("#e0e6ed"))
             painter.setPen(Qt.PenStyle.NoPen)
             painter.drawRoundedRect(rect, 6, 6)
             text_col = QColor("#a0b0c0")
-
-        # Futuristic Font Settings
         painter.setPen(text_col)
-        font = QFont("Segoe UI", 9) # Slightly smaller to account for spacing
+        font = QFont("Segoe UI", 9) 
         font.setBold(True)
         font.setCapitalization(QFont.Capitalization.AllLowercase)
         font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 3.0) 
-        
         painter.setFont(font)
         painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, self.text())
+
+class RainbowLabel(QLabel):
+    def __init__(self, text="", parent=None):
+        super().__init__(text, parent)
+        self.phase = 0.0
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.animate)
+        self.timer.start(30)
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+    def animate(self):
+        self.phase = (self.phase + 0.005) % 1.0
+        self.update()
+
+    def paintEvent(self, event):
+        if not self.text(): return
+        
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        # Create Gradient Brush for Text
+        rect = self.rect()
+        grad = QLinearGradient(0, 0, rect.width(), 0)
+        
+        # Using a slightly darker/more saturated version of the button colors
+        # so text is readable against the white/glass background
+        for i in range(4):
+            t = i / 3.0
+            hue = (self.phase + (t * 0.5)) % 1.0
+            # S: 0.7, L: 0.6 (Darker than button's L:0.92)
+            col = QColor.fromHslF(hue, 0.7, 0.6, 1.0) 
+            grad.setColorAt(t, col)
+            
+        font = QFont("Segoe UI", 11)
+        font.setBold(True)
+        font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 1.0)
+        
+        painter.setFont(font)
+        
+        # Draw gradient text using PainterPath clipping or just simple pen if possible
+        # Since Qt text gradient via Pen is tricky, we use a PainterPath filled with brush
+        path = QPainterPath()
+        
+        # Center the text manually
+        fm = self.fontMetrics()
+        txt_w = fm.horizontalAdvance(self.text())
+        txt_h = fm.ascent()
+        x = (rect.width() - txt_w) / 2
+        y = (rect.height() + txt_h) / 2 - fm.descent()
+        
+        path.addText(x, y, font, self.text())
+        
+        painter.fillPath(path, QBrush(grad))
+
 
 class SampleRateRow(QWidget):
     def __init__(self, label, key, parent_data):
@@ -867,13 +778,10 @@ class SampleRateRow(QWidget):
         header.addWidget(self.lbl_name)
         header.addStretch()
         header.addWidget(self.lbl_val)
-        
         self.slider = PrismSlider(Qt.Orientation.Horizontal)
-        # Continuous range setup
         self.slider.setRange(8000, 44100)
         self.slider.setValue(44100)
         self.slider.valueChanged.connect(self.update_val)
-        
         layout.addLayout(header)
         layout.addWidget(self.slider)
         
@@ -917,7 +825,7 @@ class MainWindow(QMainWindow):
         
         self.params = {
             'glitch': 0.5, 'wash': 0.0, 'crush': 0.0, 'reverb': 0.0, 
-            'sr_select': 44100.0, 'rate': 1.0, # sr_select default is now 44100.0
+            'sr_select': 44100.0, 'rate': 1.0, 
             'filter_amt': 0.0, 'vol_pan_amt': 0.0, 'bpm': 120.0
         }
         
@@ -927,9 +835,8 @@ class MainWindow(QMainWindow):
 
         self.player.mediaStatusChanged.connect(self.media_status_changed)
 
-        # High frequency timer
         self.anim_timer = QTimer(self)
-        self.anim_timer.setInterval(7) # ~144 FPS
+        self.anim_timer.setInterval(7) 
         self.anim_timer.timeout.connect(self.high_freq_update)
 
         central = QWidget()
@@ -1040,9 +947,8 @@ class MainWindow(QMainWindow):
         action_layout.addWidget(self.btn_save)
         side_layout.addLayout(action_layout)
 
-        self.lbl_saved_msg = QLabel("")
-        self.lbl_saved_msg.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.lbl_saved_msg.setStyleSheet("color: #3f6c9b; font-size: 11px; font-weight: bold;")
+        # REPLACED QLabel with RainbowLabel
+        self.lbl_saved_msg = RainbowLabel("")
         
         self.fade_effect = QGraphicsOpacityEffect(self.lbl_saved_msg)
         self.lbl_saved_msg.setGraphicsEffect(self.fade_effect)
@@ -1117,27 +1023,25 @@ class MainWindow(QMainWindow):
         if self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
             self.anim_timer.start()
 
-    # Update Loop
     def high_freq_update(self):
         duration = self.player.duration()
         if duration > 0: 
-            # Get position directly from player
             pos = self.player.position()
             self.wave_view.set_play_head(pos / duration)
 
     def toggle_playback(self):
         if self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
             self.player.pause()
-            self.anim_timer.stop() # Stop UI updates
+            self.anim_timer.stop() 
             self.btn_play.setText("▶")
         else:
             self.player.play()
-            self.anim_timer.start() # Start UI updates
+            self.anim_timer.start()
             self.btn_play.setText("||")
 
     def stop_playback(self):
         self.player.stop()
-        self.anim_timer.stop() # Stop UI updates
+        self.anim_timer.stop() 
         self.btn_play.setText("▶")
         self.wave_view.set_play_head(0)
 
