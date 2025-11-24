@@ -1,4 +1,4 @@
-<p>
+<p align="center">
   <img src="prism.png" alt="prism icon" width="100">
 </p>
 
