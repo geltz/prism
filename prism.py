@@ -1527,22 +1527,35 @@ class MainWindow(QMainWindow):
     def quick_export(self):
         if self.processed_audio is None: return
         
-        # Trigger the smooth rainbow acceleration on both components
+        # Trigger excitement
         self.logo.trigger_excitement()
         self.lbl_status.trigger_excitement()
         
+        # 1. Define the path: C:\Users\[Name]\Music\prism
+        home_dir = os.path.expanduser("~")
+        save_dir = os.path.join(home_dir, "Music", "prism")
+        
+        # 2. Create the folder automatically if it doesn't exist
+        if not os.path.exists(save_dir):
+            try:
+                os.makedirs(save_dir)
+            except Exception as e:
+                QMessageBox.critical(self, "error", f"could not create folder: {e}")
+                return
+
+        # 3. Generate filename and full path
         timestamp = int(time.time())
         filename = f"prism_export_{timestamp}.wav"
-        save_path = os.path.join(os.getcwd(), filename)
+        save_path = os.path.join(save_dir, filename)
         
         try:
             AudioEngine.save_file(save_path, self.processed_audio, self.sr)
             self.lbl_status.setText("status: exported")
-            self.lbl_saved_msg.setText(f"saved: {filename}")
             
-            # CORRECTED: Set opacity on the label directly, not via fade_effect
+            # 4. Tell the user where it went
+            self.lbl_saved_msg.setText("saved to: Music/prism")
+            
             self.lbl_saved_msg.set_opacity(1.0)
-            
             QTimer.singleShot(2000, self.start_fade_out)
         except Exception as e: 
             QMessageBox.critical(self, "error", f"could not save: {e}")
