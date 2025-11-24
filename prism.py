@@ -1127,6 +1127,7 @@ class MainWindow(QMainWindow):
         info_row.addStretch()
         
         self.lbl_file = PastelFileLabel("no file loaded")
+        self.lbl_file.setMinimumHeight(30) # Reserves vertical space for the button
         self.lbl_file.setObjectName("FileLabel")
         self.lbl_file.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
@@ -1134,11 +1135,6 @@ class MainWindow(QMainWindow):
         self.btn_clear.setObjectName("ClearBtn")
         self.btn_clear.setFixedSize(100, 20)
         self.btn_clear.setCursor(Qt.CursorShape.PointingHandCursor)
-        
-        # Reserve layout space even when hidden to prevent resizing/jumping
-        sp = self.btn_clear.sizePolicy()
-        sp.setRetainSizeWhenHidden(True)
-        self.btn_clear.setSizePolicy(sp)
         
         self.btn_clear.setVisible(False)
         self.btn_clear.clicked.connect(self.clear_state)
