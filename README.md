@@ -4,7 +4,7 @@
 
 prism is a lightweight waveform player and effects processor with a qt6 interface.
 
-it takes audio samples, slices them into microscopic pieces, and rearranges them into rhythmic 2-bar loops.  
+it takes audio samples, slices them into pieces, and rearranges them into rhythmic 2-bar loops.  
 
 **buttons**
 - play/pause
