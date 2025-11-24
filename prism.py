@@ -733,8 +733,9 @@ class MediaButton(QPushButton):
         # Create Pastel Gradient for the Icon
         if self.isEnabled():
             grad = QLinearGradient(0, 0, self.width(), self.height())
-            grad.setColorAt(0.0, QColor("#a1c4fd")) # Pastel Blue
-            grad.setColorAt(1.0, QColor("#c2e9fb")) # Pastel Cyan
+            # Darker, high-contrast blue for visibility
+            grad.setColorAt(0.0, QColor("#2c4e70")) 
+            grad.setColorAt(1.0, QColor("#3f6c9b")) 
             painter.setBrush(grad)
         else:
             painter.setBrush(QColor("#e0e0e0"))
@@ -1131,8 +1132,15 @@ class MainWindow(QMainWindow):
         
         self.btn_clear = QPushButton("clear")
         self.btn_clear.setObjectName("ClearBtn")
-        self.btn_clear.setFixedSize(60, 30)
+        # Thinner height (20px) and slightly narrower
+        self.btn_clear.setFixedSize(50, 20) 
         self.btn_clear.setCursor(Qt.CursorShape.PointingHandCursor)
+        
+        # Reserve layout space even when hidden to prevent resizing/jumping
+        sp = self.btn_clear.sizePolicy()
+        sp.setRetainSizeWhenHidden(True)
+        self.btn_clear.setSizePolicy(sp)
+        
         self.btn_clear.setVisible(False)
         self.btn_clear.clicked.connect(self.clear_state)
         
