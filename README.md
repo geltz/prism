@@ -1,5 +1,5 @@
 <p>
-  <img src="prism.png" alt="prism icon" width="100">
+  <img src="icon.png" alt="prism icon" width="100">
 </p>
 
 prism is a waveform player and effects processor with a qt6 interface.
