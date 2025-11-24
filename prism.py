@@ -240,7 +240,7 @@ class ProcessThread(QThread):
     finished_ok = pyqtSignal(object, int) 
     error = pyqtSignal(str)
 
-    # CHANGED: Receive raw audio data instead of a file path
+    # Receive raw audio data instead of a file path
     def __init__(self, audio_data, sr, params):
         super().__init__()
         self.audio = audio_data
@@ -249,7 +249,7 @@ class ProcessThread(QThread):
 
     def run(self):
         try:
-            # CHANGED: Process the passed audio data directly
+            # Process the passed audio data directly
             # We copy to ensure the original data in memory is never touched by reference
             processed = AudioEngine.process(self.audio.copy(), self.sr, self.params)
             self.finished_ok.emit(processed, self.sr)
@@ -1158,7 +1158,7 @@ class MainWindow(QMainWindow):
         self.logo = PrismLogo()
         side_layout.addWidget(self.logo)
         
-        # CHANGED: Use StatusRainbowLabel
+        # Use StatusRainbowLabel
         self.lbl_status = StatusRainbowLabel("status: idle")
         side_layout.addWidget(self.lbl_status)
         
