@@ -2,7 +2,7 @@
   <img src="prism.png" alt="prism icon" width="100">
 </p>
 
-prism is a lightweight audio engine, waveform player and glitch texture generator with a pyqt6 interface.
+prism is a lightweight audio engine, waveform player and glitch texture generator with a qt6 interface.
 
 it takes audio samples, slices them into microscopic pieces, and rearranges them into rhythmic 2-bar loops.  
 
