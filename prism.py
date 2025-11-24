@@ -1132,8 +1132,7 @@ class MainWindow(QMainWindow):
         
         self.btn_clear = QPushButton("clear")
         self.btn_clear.setObjectName("ClearBtn")
-        # Thinner height (20px) and slightly narrower
-        self.btn_clear.setFixedSize(50, 20) 
+        self.btn_clear.setFixedSize(100, 20)
         self.btn_clear.setCursor(Qt.CursorShape.PointingHandCursor)
         
         # Reserve layout space even when hidden to prevent resizing/jumping
