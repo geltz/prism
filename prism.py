@@ -423,12 +423,20 @@ class WaveformWidget(QWidget):
             self.handle_input(event.pos().x())
 
     def mouseMoveEvent(self, event):
+        # Only update visuals while dragging, don't seek audio yet
         if self.data is not None and self.is_scrubbing:
-            self.handle_input(event.pos().x())
+            w = self.width()
+            if w > 0:
+                x = event.pos().x()
+                pos_norm = max(0, min(w, x)) / w
+                self.play_head_pos = pos_norm
+                self.update()
 
     def mouseReleaseEvent(self, event):
         if self.is_scrubbing:
             self.is_scrubbing = False
+            # Perform the final seek here when the user lets go
+            self.seek_requested.emit(self.play_head_pos)
             self.scrub_ended.emit()
 
     def handle_input(self, x):
