@@ -254,26 +254,35 @@ class ProcessThread(QThread):
 
 STYLES = """
     QMainWindow { background-color: #f6f9fc; }
-    QLabel { color: #405165; font-family: 'Segoe UI', sans-serif; }
-    QLabel#SubHeader { color: #7aa6d4; font-size: 12px; font-weight: bold; letter-spacing: 1px; }
+    QLabel { color: #405165; font-family: 'Segoe UI', sans-serif; font-size: 11px; }
+    QLabel#SubHeader { color: #7aa6d4; font-size: 11px; font-weight: bold; letter-spacing: 0.5px; }
     
     QLabel#FileLabel { 
         color: #3f6c9b; 
-        font-size: 14px; 
+        font-size: 12px; 
         font-weight: bold; 
     }
     
-    QPushButton { background-color: rgba(255, 255, 255, 0.6); border: 1px solid #7aa6d4; color: #3f6c9b; border-radius: 6px; padding: 6px 12px; font-weight: bold; }
+    QPushButton { 
+        background-color: rgba(255, 255, 255, 0.6); 
+        border: 1px solid #7aa6d4; 
+        color: #3f6c9b; 
+        border-radius: 5px; 
+        padding: 4px 10px; 
+        font-weight: bold; 
+        font-size: 11px;
+    }
     QPushButton:hover { background-color: #3f6c9b; color: white; }
     QPushButton:pressed { background-color: #2c4e70; }
     
     QPushButton#ProcessBtn, QPushButton#SaveBtn { 
         background-color: #3f6c9b; 
         color: white; 
-        font-size: 13px; 
-        padding: 10px; 
+        font-size: 12px; 
+        padding: 8px; 
         border: none;
     }
+    
     QPushButton#ProcessBtn:hover, QPushButton#SaveBtn:hover { background-color: #5a8fbe; }
     QPushButton#ProcessBtn:disabled, QPushButton#SaveBtn:disabled { background-color: #d0dbe5; color: #f0f0f0; }
 
@@ -281,29 +290,40 @@ STYLES = """
         background-color: rgba(217, 83, 79, 0.1); 
         border: 1px solid rgba(217, 83, 79, 0.3); 
         color: #d9534f; 
-        border-radius: 10px;
-        padding: 2px 10px; 
-        font-size: 12px; 
+        border-radius: 8px;
+        padding: 2px 8px; 
+        font-size: 11px; 
         font-weight: bold; 
     }
     QPushButton#ClearBtn:hover { background-color: #d9534f; color: white; }
 
     QCheckBox { color: #405165; font-weight: bold; font-family: 'Segoe UI'; spacing: 8px; }
-    QCheckBox::indicator { width: 16px; height: 16px; border: 1px solid #7aa6d4; border-radius: 4px; background: white; }
+    QCheckBox::indicator { width: 14px; height: 14px; border: 1px solid #7aa6d4; border-radius: 4px; background: white; }
     QCheckBox::indicator:checked { background: #3f6c9b; border: 1px solid #3f6c9b; }
 """
 
 class PrismLogo(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setMinimumHeight(60)
+        self.setMinimumHeight(45)
         self.phase = 0.0
+        self.base_speed = 0.005
+        self.current_speed = self.base_speed
+        self.target_speed = self.base_speed
+        
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.animate)
         self.timer.start(16)
 
+    def trigger_excitement(self):
+        """Accelerate the rainbow effect then slowly drift back."""
+        self.current_speed = 0.25  # Higher initial burst for visibility
+        self.target_speed = self.base_speed
+
     def animate(self):
-        self.phase = (self.phase + 0.02) % 1.0
+        # Smoothly interpolate speed back to normal (slower decay for smoothness)
+        self.current_speed = self.current_speed * 0.96 + self.target_speed * 0.04
+        self.phase = (self.phase + self.current_speed) % 1.0
         self.update()
 
     def paintEvent(self, event):
@@ -321,11 +341,16 @@ class PrismLogo(QWidget):
         painter.drawLine(QPointF(0, cy + 5), QPointF(cx - 8, cy + 2))
 
         for i in range(7):
-            hue = i / 7.0
+            # Hue now shifts with phase to visualize acceleration
+            hue = (i / 7.0 - self.phase) % 1.0
+            
+            # Alpha pulse still adds to the effect
             pulse = (math.sin(self.phase * 6.28 + i) + 1) / 2
             alpha = int(100 + 155 * pulse)
-            col = QColor.fromHslF(hue, 0.8, 0.6, alpha/255.0)
+            
+            col = QColor.fromHslF(hue, 0.7, 0.7, alpha/255.0)
             painter.setPen(QPen(col, 1.5))
+            
             origin = QPointF(cx + 6, cy)
             angle_deg = -25 + (i * 8) 
             angle_rad = math.radians(angle_deg)
@@ -369,7 +394,7 @@ class WaveformWidget(QWidget):
     def set_data(self, data):
         if data.ndim > 1: d_mono = data.mean(axis=1)
         else: d_mono = data  
-        target_points = 1000
+        target_points = 2000 # Increased resolution for smoother look
         step = max(1, len(d_mono) // target_points)
         self.data = d_mono[::step]
         self.play_head_pos = 0.0
@@ -431,27 +456,24 @@ class WaveformWidget(QWidget):
         path = QPainterPath()
         cy = h / 2
         path.moveTo(0, cy)
-        x_step = w / len(self.data)
-        amp_scale = h * 0.45
-        
-        for i, val in enumerate(self.data):
-            path.lineTo(i * x_step, cy - (val * amp_scale))
+        if len(self.data) > 0:
+            x_step = w / len(self.data)
+            amp_scale = h * 0.45
+            for i, val in enumerate(self.data):
+                path.lineTo(i * x_step, cy - (val * amp_scale))
         
         path.lineTo(w, cy)
         path.lineTo(0, cy)
         
+        # Draw purely in white with alpha variation. 
+        # This acts as a "mask" for the dynamic gradient in paintEvent.
         grad = QLinearGradient(0, 0, 0, h)
-        base_color = QColor(63, 108, 155)
-        base_color.setAlpha(0)
-        grad.setColorAt(0.0, base_color)
-        base_color.setAlpha(40)
-        grad.setColorAt(0.2, base_color)
-        base_color.setAlpha(180)
-        grad.setColorAt(0.5, base_color)
-        base_color.setAlpha(40)
-        grad.setColorAt(0.8, base_color)
-        base_color.setAlpha(0)
-        grad.setColorAt(1.0, base_color)
+        c = QColor(255, 255, 255)
+        c.setAlpha(0); grad.setColorAt(0.0, c)
+        c.setAlpha(40); grad.setColorAt(0.2, c)
+        c.setAlpha(200); grad.setColorAt(0.5, c)
+        c.setAlpha(40); grad.setColorAt(0.8, c)
+        c.setAlpha(0); grad.setColorAt(1.0, c)
 
         painter.setBrush(grad)
         painter.setPen(Qt.PenStyle.NoPen)
@@ -460,47 +482,74 @@ class WaveformWidget(QWidget):
 
     def paintEvent(self, event):
         painter = QPainter(self)
+        # Background box
         painter.setBrush(QColor(255, 255, 255, 50))
         painter.setPen(Qt.PenStyle.NoPen)
         painter.drawRoundedRect(self.rect(), 4, 4)
 
+        # --- 1. Dynamic Pastel Waveform (Base) ---
         if self._static_pixmap:
-            painter.drawPixmap(0, 0, self._static_pixmap)
+            colored_wave = QPixmap(self.size())
+            colored_wave.fill(Qt.GlobalColor.transparent)
+            cw_painter = QPainter(colored_wave)
+            cw_painter.drawPixmap(0, 0, self._static_pixmap)
+            cw_painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
+            
+            t = time.time() * 0.08 
+            wave_grad = QLinearGradient(0, 0, self.width(), self.height())
+            c1 = QColor.fromHslF((t) % 1.0, 0.6, 0.80, 1.0) # Very light pastel
+            c2 = QColor.fromHslF((t + 0.2) % 1.0, 0.6, 0.80, 1.0)
+            c3 = QColor.fromHslF((t + 0.4) % 1.0, 0.6, 0.80, 1.0)
+            wave_grad.setColorAt(0.0, c1); wave_grad.setColorAt(0.5, c2); wave_grad.setColorAt(1.0, c3)
+            
+            cw_painter.fillRect(colored_wave.rect(), wave_grad)
+            cw_painter.end()
+            painter.drawPixmap(0, 0, colored_wave)
 
+        # --- 2. The "Darker/Saturated" Highlight Effect ---
         if self.data is not None and self.play_head_pos >= 0 and self._static_pixmap:
             px = int(self.play_head_pos * self.width())
-            ripple_w = 80 
-            rect = QRectF(px - ripple_w, 0, ripple_w * 2, self.height())
+            h = self.height()
+            ripple_w = 140 
+            rect = QRectF(px - ripple_w, 0, ripple_w * 2, h)
             source_rect = rect.toRect().intersected(self.rect())
             
             if not source_rect.isEmpty():
+                # Cut out the shape from the mask
                 wave_slice = self._static_pixmap.copy(source_rect)
                 slice_painter = QPainter(wave_slice)
                 slice_painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
-                hue = (self.play_head_pos * 0.8 + 0.55) % 1.0 
+                
+                # Create a gradient that is Darker and More Saturated than the base
                 grad_center = px - source_rect.x()
                 r_grad = QLinearGradient(grad_center - ripple_w, 0, grad_center + ripple_w, 0)
-                c_center = QColor.fromHslF(hue, 0.85, 0.6, 1.0)
-                c_edge = QColor.fromHslF(hue, 0.85, 0.6, 0.0)
+                
+                # Use current time t from above for hue matching, but darken Lightness
+                hue_now = (t + 0.1) % 1.0
+                
+                # Transparent edges -> Deep Saturated Center -> Transparent edges
+                c_edge = QColor.fromHslF(hue_now, 0.8, 0.5, 0.0)
+                c_center = QColor.fromHslF(hue_now, 0.85, 0.45, 0.9) # L=0.45 is darker than L=0.80 base
+                
                 r_grad.setColorAt(0.0, c_edge)
                 r_grad.setColorAt(0.5, c_center)
                 r_grad.setColorAt(1.0, c_edge)
+                
                 slice_painter.fillRect(wave_slice.rect(), r_grad)
                 slice_painter.end()
                 
-                painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Screen)
+                # Draw simply on top (SourceOver)
                 painter.drawPixmap(source_rect.topLeft(), wave_slice)
-                painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
 
-            line_hue = (self.play_head_pos * 0.8 + 0.55) % 1.0
-            h = self.height()
+            # --- 3. The Playhead Line (Pastel Rainbow Gradient) ---
             line_grad = QLinearGradient(px, 0, px, h)
-            col_core = QColor.fromHslF(line_hue, 0.6, 0.4, 0.9) 
-            col_trans = QColor.fromHslF(line_hue, 0.6, 0.4, 0.0) 
-            line_grad.setColorAt(0.0, col_trans)
-            line_grad.setColorAt(0.15, col_core)
-            line_grad.setColorAt(0.85, col_core)
-            line_grad.setColorAt(1.0, col_trans)
+            hue_shift = self.play_head_pos * 2.5 
+            for i in range(5):
+                t_g = i / 4.0
+                h_val = (t_g * 0.25 + hue_shift) % 1.0
+                col = QColor.fromHslF(h_val, 0.7, 0.85, 0.95)
+                line_grad.setColorAt(t_g, col)
+
             painter.setBrush(line_grad)
             painter.setPen(Qt.PenStyle.NoPen)
             painter.drawRect(QRectF(px - 1, 0, 2, h))
@@ -550,15 +599,34 @@ class PrismSlider(QSlider):
         groove_h = 4
         groove_y = rect.height() / 2 - groove_h / 2
         groove_rect = QRectF(rect.x(), groove_y, rect.width(), groove_h)
+        
+        # Draw faint background groove
         painter.setBrush(QColor(63, 108, 155, 30))
         painter.setPen(Qt.PenStyle.NoPen)
         painter.drawRoundedRect(groove_rect, 2, 2)
+        
         val_norm = (self.value() - self.minimum()) / (self.maximum() - self.minimum()) if (self.maximum() > self.minimum()) else 0
-        fill_hue = val_norm * 0.5
-        fill_color = QColor.fromHslF(fill_hue, 0.45, 0.7, 1.0)
-        fill_rect = QRectF(rect.x(), groove_y, rect.width() * val_norm, groove_h)
-        painter.setBrush(fill_color)
-        painter.drawRoundedRect(fill_rect, 2, 2)
+        
+        # Draw Rainbow Fill
+        if val_norm > 0.01:
+            fill_width = rect.width() * val_norm
+            fill_rect = QRectF(rect.x(), groove_y, fill_width, groove_h)
+            
+            grad = QLinearGradient(rect.x(), 0, rect.x() + fill_width, 0)
+            
+            stops = 8 # Increased stops for smoother pastel transitions
+            for i in range(stops):
+                t = i / (stops - 1)
+                # Hue mapping stays the same
+                hue = t * (val_norm * 0.85)
+
+                color = QColor.fromHslF(hue, 0.75, 0.75, 1.0)
+                grad.setColorAt(t, color)
+                
+            painter.setBrush(grad)
+            painter.drawRoundedRect(fill_rect, 2, 2)
+
+        # Draw Handle
         handle_size = 16
         cx = rect.x() + val_norm * (rect.width() - handle_size) + handle_size / 2
         cy = rect.height() / 2
@@ -566,14 +634,19 @@ class PrismSlider(QSlider):
         p1 = QPointF(cx, cy - h_half)
         p2 = QPointF(cx - h_half, cy + h_half)
         p3 = QPointF(cx + h_half, cy + h_half)
-        grad = QLinearGradient(p2, p3)
-        h1 = (self.phase) % 1.0
-        h2 = (self.phase + 0.33) % 1.0
-        h3 = (self.phase + 0.66) % 1.0
-        grad.setColorAt(0.0, QColor.fromHslF(h1, 0.6, 0.65, 1.0)) 
-        grad.setColorAt(0.5, QColor.fromHslF(h2, 0.6, 0.65, 1.0))
-        grad.setColorAt(1.0, QColor.fromHslF(h3, 0.6, 0.65, 1.0))
-        painter.setBrush(grad)
+        
+        handle_hue = (val_norm * 0.85)
+        grad_handle = QLinearGradient(p2, p3)
+        
+        # Handle is slightly more saturated than the bar (0.55 Sat, 0.80 Lightness)
+        # so it stands out just a little bit while remaining pastel.
+        c1 = QColor.fromHslF(handle_hue, 0.55, 0.80, 1.0)
+        c2 = QColor.fromHslF((handle_hue + 0.1)%1.0, 0.55, 0.80, 1.0)
+        
+        grad_handle.setColorAt(0.0, c1)
+        grad_handle.setColorAt(1.0, c2)
+        
+        painter.setBrush(grad_handle)
         painter.setPen(QPen(QColor(255, 255, 255), 1.5))
         painter.drawPolygon(QPolygonF([p1, p2, p3]))
 
@@ -813,17 +886,102 @@ class BpmControlRow(QWidget):
         self.lbl_val.setText(f"{val}")
         self.parent_data[self.key] = float(val)
 
+class StatusRainbowLabel(QLabel):
+    def __init__(self, text="status: idle", parent=None):
+        super().__init__(text, parent)
+        self.setObjectName("SubHeader")
+        self.phase = 0.0
+        self.base_speed = 0.01
+        self.current_speed = self.base_speed
+        self.target_speed = self.base_speed
+        
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.animate)
+        self.timer.start(16)
+
+    def trigger_excitement(self):
+        """Syncs with the logo acceleration."""
+        self.current_speed = 0.15
+        self.target_speed = self.base_speed
+
+    def animate(self):
+        # Decelerate logic
+        self.current_speed = self.current_speed * 0.92 + self.target_speed * 0.08
+        self.phase = (self.phase + self.current_speed) % 1.0
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        rect = self.rect()
+        
+        # Create a subtle moving gradient
+        grad = QLinearGradient(0, 0, rect.width(), 0)
+        # We create a window of rainbow that moves across the text
+        shift = self.phase
+        
+        # Define gradient stops to cycle smoothly
+        c1 = QColor("#7aa6d4") # Original blue
+        c2 = QColor.fromHslF(shift, 0.6, 0.6, 1.0) # Moving hue
+        c3 = QColor("#7aa6d4") 
+
+        grad.setColorAt(0.0, c1)
+        grad.setColorAt(0.5, c2)
+        grad.setColorAt(1.0, c3)
+
+        painter.setPen(QPen(QBrush(grad), 0))
+        painter.setFont(self.font())
+        painter.drawText(rect, self.alignment(), self.text())
+
+class PastelFileLabel(QLabel):
+    def __init__(self, text="no file loaded", parent=None):
+        super().__init__(text, parent)
+        self.setObjectName("FileLabel")
+        self.phase = 0.0
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.animate)
+        self.timer.start(50)
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+    def animate(self):
+        self.phase = (self.phase + 0.002) % 1.0
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        rect = self.rect()
+        
+        # Slow moving pastel gradient
+        grad = QLinearGradient(0, 0, rect.width(), 0)
+        for i in range(4):
+            t = i / 3.0
+            # Hue shifts slowly with phase
+            hue = (self.phase + t * 0.3) % 1.0
+            # High lightness/saturation for "Pastel" look, but dark enough to read
+            col = QColor.fromHslF(hue, 0.65, 0.6, 1.0) 
+            grad.setColorAt(t, col)
+
+        painter.setPen(QPen(QBrush(grad), 0))
+        # Use the font defined in stylesheet (bold, size 12)
+        painter.setFont(self.font())
+        painter.drawText(rect, self.alignment(), self.text())
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("prism")
-        self.resize(900, 600)
+        self.resize(900, 480) # Reduced height
         self.setAcceptDrops(True)
         self.file_path = None
         self.original_audio = None
         self.processed_audio = None
         self.sr = 44100
         self.temp_file = None
+        
+        # Smooth playback variables
+        self.last_wall_clock = 0.0
+        self.last_media_pos = 0
         
         self.params = {
             'glitch': 0.5, 'wash': 0.0, 'crush': 0.0, 'reverb': 0.0, 
@@ -838,18 +996,19 @@ class MainWindow(QMainWindow):
         self.player.mediaStatusChanged.connect(self.media_status_changed)
 
         self.anim_timer = QTimer(self)
-        self.anim_timer.setInterval(7) 
+        self.anim_timer.setInterval(7)
         self.anim_timer.timeout.connect(self.high_freq_update)
 
         central = QWidget()
         self.setCentralWidget(central)
         
         main_layout = QHBoxLayout(central)
-        main_layout.setContentsMargins(15, 15, 15, 15)
-        main_layout.setSpacing(15)
+        main_layout.setContentsMargins(10, 10, 10, 10) # Tighter margins
+        main_layout.setSpacing(10) # Tighter spacing
 
         self.viewport = QVBoxLayout()
         self.wave_view = WaveformWidget()
+        self.wave_view.setMinimumHeight(120) # Reduced from 160
         self.wave_view.seek_requested.connect(self.seek_audio)
         self.wave_view.import_clicked.connect(self.open_file_dialog)
 
@@ -859,7 +1018,7 @@ class MainWindow(QMainWindow):
         info_row = QHBoxLayout()
         info_row.addStretch()
         
-        self.lbl_file = QLabel("no file loaded")
+        self.lbl_file = PastelFileLabel("no file loaded")
         self.lbl_file.setObjectName("FileLabel")
         self.lbl_file.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
@@ -876,19 +1035,21 @@ class MainWindow(QMainWindow):
         info_row.addStretch()
 
         self.viewport.addWidget(self.wave_view, 1)
-        self.viewport.addSpacing(10)
+        self.viewport.addSpacing(5)
         self.viewport.addLayout(info_row)
         self.viewport.addStretch()
 
         self.sidebar = GlassFrame()
-        self.sidebar.setFixedWidth(300)
+        self.sidebar.setFixedWidth(280) # Slightly narrower
         side_layout = QVBoxLayout(self.sidebar)
-        side_layout.setContentsMargins(15, 20, 15, 20)
+        side_layout.setContentsMargins(12, 15, 12, 15) # Tighter padding inside glass
         side_layout.setSpacing(2)
 
-        side_layout.addWidget(PrismLogo())
-        self.lbl_status = QLabel("status: idle")
-        self.lbl_status.setObjectName("SubHeader")
+        self.logo = PrismLogo()
+        side_layout.addWidget(self.logo)
+        
+        # CHANGED: Use StatusRainbowLabel
+        self.lbl_status = StatusRainbowLabel("status: idle")
         side_layout.addWidget(self.lbl_status)
         
         line = QFrame()
@@ -964,6 +1125,223 @@ class MainWindow(QMainWindow):
 
         main_layout.addLayout(self.viewport, 1)
         main_layout.addWidget(self.sidebar)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        grad = QRadialGradient(self.width()/2, 0, self.width())
+        grad.setColorAt(0, QColor("#eef4f9"))
+        grad.setColorAt(1, QColor("#f6f9fc"))
+        painter.fillRect(self.rect(), grad)
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls(): event.accept()
+        else: event.ignore()
+
+    def dropEvent(self, event):
+        files = [u.toLocalFile() for u in event.mimeData().urls()]
+        if files: self.load_file(files[0])
+
+    def open_file_dialog(self):
+        fname, _ = QFileDialog.getOpenFileName(self, 'open audio', os.path.expanduser("~"), "audio files (*.wav *.mp3 *.flac *.ogg)")
+        if fname: self.load_file(fname)
+
+    def clear_state(self):
+        self.stop_playback()
+        self.player.setSource(QUrl())
+        self.file_path = None
+        self.original_audio = None
+        self.processed_audio = None
+        self.wave_view.data = None
+        self.wave_view.update_static_waveform()
+        self.wave_view.update()
+        
+        self.lbl_file.setText("no file loaded")
+        self.btn_clear.setVisible(False)
+        self.lbl_status.setText("status: idle")
+        
+        self.btn_process.setEnabled(False)
+        self.btn_save.setEnabled(False)
+        self.btn_play.setEnabled(False)
+        self.btn_stop.setEnabled(False)
+
+    def load_file(self, path):
+        self.stop_playback()
+        self.file_path = path
+        self.lbl_file.setText(os.path.basename(path).lower())
+        self.btn_clear.setVisible(True)
+        try:
+            data, sr = AudioEngine.load_file(path)
+            self.sr = sr
+            self.original_audio = data
+            
+            self.player.setSource(QUrl.fromLocalFile(path))
+            display_data = data[:sr*30] if len(data) > sr*30 else data
+            self.wave_view.set_data(display_data)
+            
+            self.btn_process.setEnabled(True)
+            self.btn_play.setEnabled(True)
+            self.btn_stop.setEnabled(True)
+            self.lbl_status.setText("status: ready")
+        except Exception as e:
+            QMessageBox.critical(self, "error", f"could not load file: {e}")
+
+    def resume_sync(self):
+        if self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
+            self.last_wall_clock = time.perf_counter()
+            self.last_media_pos = self.player.position()
+            self.anim_timer.start()
+
+    def high_freq_update(self):
+        """Calculates interpolated playhead position for buttery smooth 144hz rendering."""
+        duration = self.player.duration()
+        if duration > 0 and self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
+            
+            # Interpolation logic
+            now = time.perf_counter()
+            delta = now - self.last_wall_clock
+            
+            # Must account for playback rate for correct speed
+            rate = self.params.get('rate', 1.0)
+            
+            interpolated_ms = self.last_media_pos + (delta * 1000.0 * rate)
+            
+            # Drift correction: If actual QMediaPlayer pos drifts significantly, resync.
+            # (QMediaPlayer updates roughly every 20-50ms)
+            actual_pos = self.player.position()
+            if abs(interpolated_ms - actual_pos) > 75: # 75ms tolerance
+                self.last_media_pos = actual_pos
+                self.last_wall_clock = now
+                interpolated_ms = actual_pos
+
+            self.wave_view.set_play_head(interpolated_ms / duration)
+            
+            # Handle Loop/End edge case visually
+            if interpolated_ms >= duration:
+                self.last_media_pos = 0
+                self.last_wall_clock = now
+
+    def toggle_playback(self):
+        if self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
+            self.player.pause()
+            self.anim_timer.stop() 
+            self.btn_play.setText("▶")
+        else:
+            # Init sync variables before playing
+            self.last_wall_clock = time.perf_counter()
+            self.last_media_pos = self.player.position()
+            self.player.play()
+            self.anim_timer.start()
+            self.btn_play.setText("||")
+
+    def stop_playback(self):
+        self.player.stop()
+        self.anim_timer.stop() 
+        self.btn_play.setText("▶")
+        self.wave_view.set_play_head(0)
+
+    def seek_audio(self, pos_norm):
+        duration = self.player.duration()
+        if duration > 0: 
+            ms = int(pos_norm * duration)
+            self.player.setPosition(ms)
+            # Resync interpolation
+            self.last_media_pos = ms
+            self.last_wall_clock = time.perf_counter()
+
+    def media_status_changed(self, status):
+        if status == QMediaPlayer.MediaStatus.EndOfMedia:
+            self.btn_play.setText("▶")
+            self.wave_view.set_play_head(0)
+            self.anim_timer.stop()
+
+    def start_processing(self):
+        if self.original_audio is None: return
+        
+        self.stop_playback()
+        self.lbl_status.setText("status: processing...")
+        # Do not need manual stylesheet color, StatusRainbowLabel handles it
+        self.set_ui_locked(True)
+        
+        self.thread = ProcessThread(self.original_audio, self.sr, self.params.copy())
+        self.thread.finished_ok.connect(self.processing_done)
+        self.thread.error.connect(self.processing_error)
+        self.thread.start()
+
+    def processing_done(self, data, sr):
+        self.processed_audio = data
+        self.wave_view.set_data(data)
+        self.lbl_status.setText("status: done")
+        self.set_ui_locked(False)
+        try:
+            fd, temp_path = tempfile.mkstemp(suffix='.wav')
+            os.close(fd)
+            AudioEngine.save_file(temp_path, data, sr)
+            self.temp_file = temp_path
+            self.player.setSource(QUrl.fromLocalFile(temp_path))
+            
+            # Auto-play with sync reset
+            self.last_media_pos = 0
+            self.last_wall_clock = time.perf_counter()
+            self.player.play()
+            self.btn_play.setText("||")
+            self.anim_timer.start()
+            
+        except Exception as e: print(f"Temp file error: {e}")
+
+    def processing_error(self, msg):
+        QMessageBox.critical(self, "processing error", msg)
+        self.lbl_status.setText("status: error")
+        self.set_ui_locked(False)
+
+    def set_ui_locked(self, locked):
+        """
+        Prevent flicker:
+        Instead of disabling the whole sidebar (which grays out everything),
+        we only disable the specific button and perhaps specific inputs if necessary.
+        Visual stability is preferred over aggressive disabling.
+        """
+        self.btn_process.setEnabled(not locked)
+        # We purposely leave the sliders and other buttons visually enabled
+        # but inactive logic could be applied if strictly needed. 
+        # For this app, adjusting sliders during processing is harmless (won't affect running thread).
+        
+        # Only disabling the Save button if locked
+        if locked:
+             self.btn_save.setEnabled(False)
+        else:
+             # Enable save only if we have processed audio
+             self.btn_save.setEnabled(self.processed_audio is not None)
+
+    def quick_export(self):
+        if self.processed_audio is None: return
+        
+        # Trigger the smooth rainbow acceleration on both components
+        self.logo.trigger_excitement()
+        self.lbl_status.trigger_excitement()
+        
+        timestamp = int(time.time())
+        filename = f"prism_export_{timestamp}.wav"
+        save_path = os.path.join(os.getcwd(), filename)
+        
+        try:
+            AudioEngine.save_file(save_path, self.processed_audio, self.sr)
+            self.lbl_status.setText("status: exported")
+            self.lbl_saved_msg.setText(f"saved: {filename}")
+            self.fade_effect.setOpacity(1.0) 
+            QTimer.singleShot(2000, self.start_fade_out)
+        except Exception as e: 
+            QMessageBox.critical(self, "error", f"could not save: {e}")
+
+    def start_fade_out(self):
+        self.fade_anim.setStartValue(1.0)
+        self.fade_anim.setEndValue(0.0)
+        self.fade_anim.start()
+    
+    def closeEvent(self, event):
+        if self.temp_file and os.path.exists(self.temp_file):
+            try: os.remove(self.temp_file)
+            except: pass
+        event.accept()
 
     def paintEvent(self, event):
         painter = QPainter(self)
