@@ -76,12 +76,14 @@ class AudioEngine:
         return slices
 
     @staticmethod
-    def generate_2bar_loop(slice_lib, sr, density, bpm):
+    def generate_4bar_loop(slice_lib, sr, density, bpm):
         rng = np.random.default_rng()
         beat_dur = 60.0 / bpm
         samples_per_beat = int(beat_dur * sr)
         bar_samples = samples_per_beat * 4
-        loop_samples = bar_samples * 2
+
+        loop_samples = bar_samples * 4 
+        
         out = np.zeros(loop_samples, dtype=np.float32)
         cursor = 0
         samples_16th = samples_per_beat // 4
@@ -211,7 +213,7 @@ class AudioEngine:
     def process(audio, sr, params):
         bpm = params.get('bpm', 120.0)
         slices = AudioEngine.make_slice_library(audio, sr)
-        y = AudioEngine.generate_2bar_loop(slices, sr, density=params['glitch'], bpm=bpm)
+        y = AudioEngine.generate_4bar_loop(slices, sr, density=params['glitch'], bpm=bpm)
         
         y = AudioEngine.apply_rand_filter(y, sr, intensity=params['filter_amt'], bpm=bpm)
         y = AudioEngine.apply_vol_pan(y, sr, intensity=params['vol_pan_amt'], bpm=bpm)
@@ -319,7 +321,7 @@ class PrismLogo(QWidget):
 
     def trigger_excitement(self):
         """Accelerate the rainbow effect then slowly drift back."""
-        self.current_speed = 0.25  # Higher initial burst for visibility
+        self.current_speed = 0.05  # Higher initial burst for visibility
         self.target_speed = self.base_speed
 
     def animate(self):
@@ -484,12 +486,24 @@ class WaveformWidget(QWidget):
 
     def paintEvent(self, event):
         painter = QPainter(self)
-        # Background box
-        painter.setBrush(QColor(255, 255, 255, 50))
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.drawRoundedRect(self.rect(), 4, 4)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        rect = self.rect()
 
-        # --- 1. Dynamic Pastel Waveform (Base) ---
+        # --- 1. Glass Background (Matching the Sidebar) ---
+        # Background: 65% opaque white
+        painter.setBrush(QColor(255, 255, 255, 166)) 
+        # Border: 80% opaque white
+        painter.setPen(QPen(QColor(255, 255, 255, 204), 1)) 
+        # Radius: 16px (Matching GlassFrame)
+        painter.drawRoundedRect(rect, 16, 16)
+
+        # --- 2. Set Clipping for Waveform Content ---
+        # This ensures the waveform doesn't draw outside the rounded corners
+        path = QPainterPath()
+        path.addRoundedRect(QRectF(rect), 16, 16)
+        painter.setClipPath(path)
+
+        # --- 3. Dynamic Pastel Waveform (Base) ---
         if self._static_pixmap:
             colored_wave = QPixmap(self.size())
             colored_wave.fill(Qt.GlobalColor.transparent)
@@ -499,7 +513,7 @@ class WaveformWidget(QWidget):
             
             t = time.time() * 0.08 
             wave_grad = QLinearGradient(0, 0, self.width(), self.height())
-            c1 = QColor.fromHslF((t) % 1.0, 0.6, 0.80, 1.0) # Very light pastel
+            c1 = QColor.fromHslF((t) % 1.0, 0.6, 0.80, 1.0) 
             c2 = QColor.fromHslF((t + 0.2) % 1.0, 0.6, 0.80, 1.0)
             c3 = QColor.fromHslF((t + 0.4) % 1.0, 0.6, 0.80, 1.0)
             wave_grad.setColorAt(0.0, c1); wave_grad.setColorAt(0.5, c2); wave_grad.setColorAt(1.0, c3)
@@ -508,42 +522,31 @@ class WaveformWidget(QWidget):
             cw_painter.end()
             painter.drawPixmap(0, 0, colored_wave)
 
-        # --- 2. The "Darker/Saturated" Highlight Effect ---
+        # --- 4. The Highlight Effect ---
         if self.data is not None and self.play_head_pos >= 0 and self._static_pixmap:
             px = int(self.play_head_pos * self.width())
             h = self.height()
             ripple_w = 140 
-            rect = QRectF(px - ripple_w, 0, ripple_w * 2, h)
-            source_rect = rect.toRect().intersected(self.rect())
+            rect_h = QRectF(px - ripple_w, 0, ripple_w * 2, h)
+            source_rect = rect_h.toRect().intersected(self.rect())
             
             if not source_rect.isEmpty():
-                # Cut out the shape from the mask
                 wave_slice = self._static_pixmap.copy(source_rect)
                 slice_painter = QPainter(wave_slice)
                 slice_painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
                 
-                # Create a gradient that is Darker and More Saturated than the base
                 grad_center = px - source_rect.x()
                 r_grad = QLinearGradient(grad_center - ripple_w, 0, grad_center + ripple_w, 0)
-                
-                # Use current time t from above for hue matching, but darken Lightness
                 hue_now = (t + 0.1) % 1.0
-                
-                # Transparent edges -> Deep Saturated Center -> Transparent edges
                 c_edge = QColor.fromHslF(hue_now, 0.8, 0.5, 0.0)
-                c_center = QColor.fromHslF(hue_now, 0.85, 0.45, 0.9) # L=0.45 is darker than L=0.80 base
-                
-                r_grad.setColorAt(0.0, c_edge)
-                r_grad.setColorAt(0.5, c_center)
-                r_grad.setColorAt(1.0, c_edge)
+                c_center = QColor.fromHslF(hue_now, 0.85, 0.45, 0.9)
+                r_grad.setColorAt(0.0, c_edge); r_grad.setColorAt(0.5, c_center); r_grad.setColorAt(1.0, c_edge)
                 
                 slice_painter.fillRect(wave_slice.rect(), r_grad)
                 slice_painter.end()
-                
-                # Draw simply on top (SourceOver)
                 painter.drawPixmap(source_rect.topLeft(), wave_slice)
 
-            # --- 3. The Playhead Line (Pastel Rainbow Gradient) ---
+            # --- 5. The Playhead Line ---
             line_grad = QLinearGradient(px, 0, px, h)
             hue_shift = self.play_head_pos * 2.5 
             for i in range(5):
@@ -709,28 +712,40 @@ class MediaButton(QPushButton):
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        bg_color = QColor(255, 255, 255, 200)
-        if self.underMouse(): bg_color = QColor(255, 255, 255, 255)
-        if self.isDown(): bg_color = QColor(200, 220, 240)
-        if not self.isEnabled(): bg_color = QColor(255, 255, 255, 100)
+        
+        # Background logic
+        bg_color = QColor(255, 255, 255, 0)
+        if self.underMouse(): bg_color = QColor(245, 248, 250)
+        if self.isDown(): bg_color = QColor(235, 240, 245)
+        
         painter.setBrush(bg_color)
         painter.setPen(Qt.PenStyle.NoPen)
         painter.drawRoundedRect(self.rect(), 25, 25) 
-        icon_color = QColor("#3f6c9b") if self.isEnabled() else QColor("#a0b0c0")
-        painter.setBrush(icon_color)
+
+        # Create Pastel Gradient for the Icon
+        if self.isEnabled():
+            grad = QLinearGradient(0, 0, self.width(), self.height())
+            grad.setColorAt(0.0, QColor("#a1c4fd")) # Pastel Blue
+            grad.setColorAt(1.0, QColor("#c2e9fb")) # Pastel Cyan
+            painter.setBrush(grad)
+        else:
+            painter.setBrush(QColor("#e0e0e0"))
+
         cx, cy, txt = self.width() / 2, self.height() / 2, self.text()
+        
+        # Draw Symbols
         if "▶" in txt:
             path = QPainterPath()
-            path.moveTo(cx - 6, cy - 9) 
-            path.lineTo(cx - 6, cy + 9)
-            path.lineTo(cx + 12, cy)
+            path.moveTo(cx - 5, cy - 8) 
+            path.lineTo(cx - 5, cy + 8)
+            path.lineTo(cx + 10, cy)
             path.closeSubpath()
             painter.drawPath(path)
         elif "||" in txt:
-            painter.drawRoundedRect(QRectF(cx - 9, cy - 9, 6, 18), 2, 2)
-            painter.drawRoundedRect(QRectF(cx + 3, cy - 9, 6, 18), 2, 2)
+            painter.drawRoundedRect(QRectF(cx - 8, cy - 8, 5, 16), 2, 2)
+            painter.drawRoundedRect(QRectF(cx + 3, cy - 8, 5, 16), 2, 2)
         elif "■" in txt:
-            painter.drawRoundedRect(QRectF(cx - 8, cy - 8, 16, 16), 3, 3)
+            painter.drawRoundedRect(QRectF(cx - 7, cy - 7, 14, 14), 3, 3)
 
 class RainbowButton(QPushButton):
     def __init__(self, text, parent=None):
@@ -759,37 +774,60 @@ class RainbowButton(QPushButton):
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        # Text antialiasing is crucial for sharpness
+        painter.setRenderHint(QPainter.RenderHint.TextAntialiasing) 
         rect = self.rect()
+
+        # --- 1. Draw Button Background (Keep existing gradient) ---
         if self.isEnabled():
+            # Base white layer
             painter.setBrush(QColor("white"))
             painter.setPen(Qt.PenStyle.NoPen)
             painter.drawRoundedRect(rect, 6, 6)
-            grad = QLinearGradient(0, 0, rect.width(), 0)
+
+            # Animated Pastel Fill
+            grad_bg = QLinearGradient(0, 0, rect.width(), 0)
             for i in range(4):
                 t = i / 3.0
                 hue = (self.phase + (t * 0.5)) % 1.0
                 opacity = 200 if self.is_hovering else 150
+                # Very light pastel background
                 col = QColor.fromHslF(hue, 0.6, 0.92, opacity/255.0)
-                grad.setColorAt(t, col)
-            painter.setBrush(grad)
+                grad_bg.setColorAt(t, col)
+
+            painter.setBrush(grad_bg)
             painter.drawRoundedRect(rect, 6, 6)
+
+            # Animated Border
             border_col = QColor.fromHslF(self.phase, 0.5, 0.8, 1.0)
             painter.setPen(QPen(border_col, 1))
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawRoundedRect(rect, 6, 6)
-            text_col = QColor("#6a8cb3") 
+
         else:
+            # Disabled Background
             painter.setBrush(QColor("#e0e6ed"))
             painter.setPen(Qt.PenStyle.NoPen)
             painter.drawRoundedRect(rect, 6, 6)
-            text_col = QColor("#a0b0c0")
-        painter.setPen(text_col)
-        font = QFont("Segoe UI", 9) 
+
+        # --- 2. Draw Button Text (Fixed for Sharpness) ---
+        font = QFont("Segoe UI", 9)
         font.setBold(True)
         font.setCapitalization(QFont.Capitalization.AllLowercase)
-        font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 3.0) 
         painter.setFont(font)
-        painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, self.text())
+
+        if self.isEnabled():
+            # Hue moves with phase but remains subtle.
+            text_col = QColor.fromHslF(self.phase, 0.25, 0.50, 1.0)
+            
+            painter.setPen(text_col)
+            # Standard drawText is much sharper than fillPath
+            painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, self.text())
+
+        else:
+            # Disabled Text
+            painter.setPen(QColor("#a0b0c0"))
+            painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, self.text())
 
 class RainbowLabel(QLabel):
     def __init__(self, text="", parent=None):
@@ -821,8 +859,7 @@ class RainbowLabel(QLabel):
             hue = (self.phase + (t * 0.5)) % 1.0
             col = QColor.fromHslF(hue, 0.75, 0.55, 1.0) 
             grad.setColorAt(t, col)
-            
-        # MATCHING PREVIOUS STYLING: 11px, Bold, Segoe UI
+
         font = QFont("Segoe UI")
         font.setPixelSize(11) # Explicitly 11px to match "font-size: 11px"
         font.setBold(True)
@@ -960,8 +997,8 @@ class PastelFileLabel(QLabel):
             t = i / 3.0
             # Hue shifts slowly with phase
             hue = (self.phase + t * 0.3) % 1.0
-            # High lightness/saturation for "Pastel" look, but dark enough to read
-            col = QColor.fromHslF(hue, 0.65, 0.6, 1.0) 
+            # High lightness/saturation for "Pastel" look
+            col = QColor.fromHslF(hue, 0.35, 0.6, 1.0)
             grad.setColorAt(t, col)
 
         painter.setPen(QPen(QBrush(grad), 0))
@@ -1189,6 +1226,7 @@ class MainWindow(QMainWindow):
 
     def paintEvent(self, event):
         painter = QPainter(self)
+        # Restore the subtle blue radial gradient
         grad = QRadialGradient(self.width()/2, 0, self.width())
         grad.setColorAt(0, QColor("#eef4f9"))
         grad.setColorAt(1, QColor("#f6f9fc"))
@@ -1203,7 +1241,7 @@ class MainWindow(QMainWindow):
         if files: self.load_file(files[0])
 
     def open_file_dialog(self):
-        fname, _ = QFileDialog.getOpenFileName(self, 'open audio', os.path.expanduser("~"), "audio files (*.wav *.mp3 *.flac *.ogg)")
+        fname, _ = QFileDialog.getOpenFileName(self, 'open', os.path.expanduser("~"), "audio files (*.wav *.mp3 *.flac *.ogg)")
         if fname: self.load_file(fname)
 
     def clear_state(self):
@@ -1400,7 +1438,7 @@ class MainWindow(QMainWindow):
         if files: self.load_file(files[0])
 
     def open_file_dialog(self):
-        fname, _ = QFileDialog.getOpenFileName(self, 'open audio', os.path.expanduser("~"), "audio files (*.wav *.mp3 *.flac *.ogg)")
+        fname, _ = QFileDialog.getOpenFileName(self, 'open', os.path.expanduser("~"), "audio files (*.wav *.mp3 *.flac *.ogg)")
         if fname: self.load_file(fname)
 
     def clear_state(self):
