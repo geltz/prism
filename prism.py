@@ -1,3 +1,4 @@
+import ctypes
 import sys
 import os
 import tempfile
@@ -10,7 +11,8 @@ from scipy import signal
 from PyQt6.QtCore import (Qt, QThread, pyqtSignal, QUrl, QTimer, QRectF, QPointF,
                           QPropertyAnimation, QEasingCurve, pyqtProperty)
 from PyQt6.QtGui import (QColor, QPainter, QLinearGradient, QPen, QPainterPath, 
-                         QRadialGradient, QBrush, QFont, QPixmap, QCursor, QPolygonF)
+                         QRadialGradient, QBrush, QFont, QPixmap, QCursor, 
+                         QPolygonF, QIcon)
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                              QHBoxLayout, QLabel, QSlider, QPushButton, 
                              QFileDialog, QFrame, QGraphicsDropShadowEffect,
@@ -1557,12 +1559,31 @@ class MainWindow(QMainWindow):
         event.accept()
 
 if __name__ == '__main__':
+    # 1. Fix Taskbar Icon for Windows (Wrapped in try/except to prevent crashes)
+    try:
+        myappid = 'prism.audio.tool.v1'
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+    except Exception:
+        pass # Ignore if this fails (e.g. on non-Windows or permissions issues)
+
     app = QApplication(sys.argv)
     app.setStyleSheet(STYLES)
+    
+    # 2. Set the Application Icon
+    # We resolve the absolute path to ensure the EXE finds the icon reliably
+    icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "prism.ico")
+    
+    if os.path.exists(icon_path):
+        app.setWindowIcon(QIcon(icon_path))
+    elif os.path.exists("prism.ico"):
+        # Fallback for some dev environments
+        app.setWindowIcon(QIcon("prism.ico"))
+
     if hasattr(Qt.ApplicationAttribute, 'AA_EnableHighDpiScaling'):
         app.setAttribute(Qt.ApplicationAttribute.AA_EnableHighDpiScaling, True)
     if hasattr(Qt.ApplicationAttribute, 'AA_UseHighDpiPixmaps'):
         app.setAttribute(Qt.ApplicationAttribute.AA_UseHighDpiPixmaps, True)
+        
     window = MainWindow()
     window.show()
     sys.exit(app.exec())
