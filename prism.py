@@ -8,7 +8,7 @@ import soundfile as sf
 from scipy import signal
 
 from PyQt6.QtCore import (Qt, QThread, pyqtSignal, QUrl, QTimer, QRectF, QPointF,
-                          QPropertyAnimation, QEasingCurve)
+                          QPropertyAnimation, QEasingCurve, pyqtProperty)
 from PyQt6.QtGui import (QColor, QPainter, QLinearGradient, QPen, QPainterPath, 
                          QRadialGradient, QBrush, QFont, QPixmap, QCursor, QPolygonF)
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
@@ -967,6 +967,66 @@ class PastelFileLabel(QLabel):
         painter.setFont(self.font())
         painter.drawText(rect, self.alignment(), self.text())
 
+class ExportMessageLabel(QLabel):
+    def __init__(self, text="", parent=None):
+        super().__init__(text, parent)
+        self._opacity = 0.0 # Start invisible
+        self.phase = 0.0
+        
+        # Match "Status" font settings exactly
+        font = QFont("Segoe UI", 11)
+        font.setBold(True)
+        font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 0.5)
+        self.setFont(font)
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.animate)
+        self.timer.start(16)
+
+    def animate(self):
+        self.phase = (self.phase + 0.01) % 1.0
+        if self._opacity > 0.01:
+            self.update()
+
+    def get_opacity(self): 
+        return self._opacity
+
+    def set_opacity(self, o): 
+        self._opacity = max(0.0, min(1.0, o))
+        self.update()
+
+    # Expose opacity as a Qt Property for QPropertyAnimation
+    opacity = pyqtProperty(float, get_opacity, set_opacity)
+
+    def paintEvent(self, event):
+        if self._opacity <= 0: return
+        
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        rect = self.rect()
+        
+        # Use the same subtle gradient logic as StatusRainbowLabel
+        grad = QLinearGradient(0, 0, rect.width(), 0)
+        shift = self.phase
+        
+        c1 = QColor("#7aa6d4")
+        c2 = QColor.fromHslF(shift, 0.6, 0.6, 1.0)
+        c3 = QColor("#7aa6d4")
+        
+        # Apply the opacity to the alpha channel of the colors
+        c1.setAlphaF(self._opacity)
+        c2.setAlphaF(self._opacity)
+        c3.setAlphaF(self._opacity)
+
+        grad.setColorAt(0.0, c1)
+        grad.setColorAt(0.5, c2)
+        grad.setColorAt(1.0, c3)
+
+        painter.setPen(QPen(QBrush(grad), 0))
+        painter.setFont(self.font())
+        painter.drawText(rect, self.alignment(), self.text())
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -1111,14 +1171,13 @@ class MainWindow(QMainWindow):
         action_layout.addWidget(self.btn_save)
         side_layout.addLayout(action_layout)
 
-        self.lbl_saved_msg = RainbowLabel("")
+        self.lbl_saved_msg = ExportMessageLabel("")
         
-        self.fade_effect = QGraphicsOpacityEffect(self.lbl_saved_msg)
-        self.lbl_saved_msg.setGraphicsEffect(self.fade_effect)
-        
-        self.fade_anim = QPropertyAnimation(self.fade_effect, b"opacity")
+        # Animate the custom 'opacity' property directly on the label
+        self.fade_anim = QPropertyAnimation(self.lbl_saved_msg, b"opacity")
         self.fade_anim.setDuration(1000)
         self.fade_anim.setEasingCurve(QEasingCurve.Type.OutQuad)
+        # When fade finishes, clear text (optional, but good practice)
         self.fade_anim.finished.connect(lambda: self.lbl_saved_msg.setText(""))
         
         side_layout.addWidget(self.lbl_saved_msg)
@@ -1312,26 +1371,6 @@ class MainWindow(QMainWindow):
              # Enable save only if we have processed audio
              self.btn_save.setEnabled(self.processed_audio is not None)
 
-    def quick_export(self):
-        if self.processed_audio is None: return
-        
-        # Trigger the smooth rainbow acceleration on both components
-        self.logo.trigger_excitement()
-        self.lbl_status.trigger_excitement()
-        
-        timestamp = int(time.time())
-        filename = f"prism_export_{timestamp}.wav"
-        save_path = os.path.join(os.getcwd(), filename)
-        
-        try:
-            AudioEngine.save_file(save_path, self.processed_audio, self.sr)
-            self.lbl_status.setText("status: exported")
-            self.lbl_saved_msg.setText(f"saved: {filename}")
-            self.fade_effect.setOpacity(1.0) 
-            QTimer.singleShot(2000, self.start_fade_out)
-        except Exception as e: 
-            QMessageBox.critical(self, "error", f"could not save: {e}")
-
     def start_fade_out(self):
         self.fade_anim.setStartValue(1.0)
         self.fade_anim.setEndValue(0.0)
@@ -1486,6 +1525,10 @@ class MainWindow(QMainWindow):
     def quick_export(self):
         if self.processed_audio is None: return
         
+        # Trigger the smooth rainbow acceleration on both components
+        self.logo.trigger_excitement()
+        self.lbl_status.trigger_excitement()
+        
         timestamp = int(time.time())
         filename = f"prism_export_{timestamp}.wav"
         save_path = os.path.join(os.getcwd(), filename)
@@ -1494,7 +1537,10 @@ class MainWindow(QMainWindow):
             AudioEngine.save_file(save_path, self.processed_audio, self.sr)
             self.lbl_status.setText("status: exported")
             self.lbl_saved_msg.setText(f"saved: {filename}")
-            self.fade_effect.setOpacity(1.0) 
+            
+            # CORRECTED: Set opacity on the label directly, not via fade_effect
+            self.lbl_saved_msg.set_opacity(1.0)
+            
             QTimer.singleShot(2000, self.start_fade_out)
         except Exception as e: 
             QMessageBox.critical(self, "error", f"could not save: {e}")
