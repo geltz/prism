@@ -80,84 +80,39 @@ class AudioEngine:
         rng = np.random.default_rng()
         beat_dur = 60.0 / bpm
         samples_per_beat = int(beat_dur * sr)
+        bar_samples = samples_per_beat * 4
+
+        loop_samples = bar_samples * 4 
+        
+        out = np.zeros(loop_samples, dtype=np.float32)
+        cursor = 0
         samples_16th = samples_per_beat // 4
         
-        swing_samps = int(samples_16th * 0.33 * swing)
-        
-        bar_samples = samples_per_beat * 4
-        loop_samples = bar_samples * 4 
-        out = np.zeros(loop_samples, dtype=np.float32)
-        
-        cursor = 0
-        grid_pos = 0 # 16th note counter
-        
-        # State for "Groove" consistency
-        current_slice_idx = rng.integers(len(slice_lib))
-        time_since_slice_change = 0
-        
         while cursor < loop_samples:
-            # 1. Determine Duration (The Rhythm)
-            # Weighted choices for musicality: 
-            # 2 = 8th note, 4 = Quarter, 3 = Dotted 8th, 1 = 16th
-            # Low density = mostly quarters/8ths. High density = introduces 16ths/dotted.
-            
             r = rng.random()
-            # Default weights
-            choices = [2, 4] 
-            weights = [0.6, 0.4]
-            
-            if density > 0.3:
-                choices = [1, 2, 3, 4]
-                # Higher density = more chaotic durations
-                w_16 = 0.1 + (density * 0.3)
-                w_dot = 0.1 + (density * 0.2)
-                rem = 1.0 - (w_16 + w_dot)
-                weights = [w_16, rem/2, w_dot, rem/2]
-            
-            grid_mult = rng.choice(choices, p=weights)
-            
-            # Stutter override (internal very sparse texture)
-            if stutter > 0 and rng.random() < (stutter * 0.15):
-                grid_mult = 1 # Force rapid fire
+            # Old logic: simple probability thresholds
+            if r < (0.1 + 0.4 * density): grid_mult = 1 
+            elif r < (0.4 + 0.4 * density): grid_mult = 2 
+            else: grid_mult = 4 
             
             dur = samples_16th * grid_mult
             
-            # 2. Determine Slice (The Melody/Texture)
-            # Change slice? High chance if we've held it for a beat, low chance otherwise
-            change_chance = 0.2 + (density * 0.5)
-            if time_since_slice_change > 4 or rng.random() < change_chance:
-                current_slice_idx = rng.integers(len(slice_lib))
-                time_since_slice_change = 0
+            # Clamp duration to not exceed loop end
+            if cursor + dur > loop_samples: dur = loop_samples - cursor
             
-            slc = slice_lib[current_slice_idx]
+            # Pick a random slice
+            slc = slice_lib[rng.integers(len(slice_lib))]
             
-            # 3. Construct the Audio Chunk
+            # Simple tiling/looping if slice is too short
             if len(slc) >= dur: 
-                full_chunk = slc[:dur]
-            else: 
-                # Intelligent looping for short slices (ping-pong vs repeat)
-                repeats = int(np.ceil(dur/len(slc)))
-                raw = np.tile(slc, repeats)[:dur]
-                # Apply micro-fade to prevent clicks on hard loops
-                full_chunk = raw
-            
-            # 4. Write to Buffer with Swing
-            write_pos = cursor
-            # Apply swing only to off-beat 16ths
-            if (grid_pos % 2) == 1:
-                write_pos += swing_samps
-            
-            if write_pos + len(full_chunk) > loop_samples:
-                full_chunk = full_chunk[:loop_samples - write_pos]
-            
-            if len(full_chunk) > 0:
-                # Overdub slightly to smooth transitions
-                out[write_pos:write_pos+len(full_chunk)] += full_chunk
-
+                chunk = slc[:dur]
+            else:
+                repeats = int(np.ceil(dur / len(slc)))
+                chunk = np.tile(slc, repeats)[:dur]
+                
+            out[cursor:cursor+dur] = chunk
             cursor += dur
-            grid_pos += grid_mult
-            time_since_slice_change += grid_mult
-
+            
         return out
     
     @staticmethod
