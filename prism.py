@@ -589,8 +589,13 @@ class WaveformWidget(QWidget):
         for i, val in enumerate(self.data):
             path.lineTo(i * x_step, cy - (val * amp_scale))
         
-        path.lineTo(w, cy)
-        path.lineTo(0, cy)
+        # FIX: Instead of closing the path back to center, create a mirrored bottom half
+        # to form a complete waveform area without the center line
+        for i in range(len(self.data) - 1, -1, -1):
+            val = self.data[i]
+            path.lineTo(i * x_step, cy + (val * amp_scale))
+        
+        path.closeSubpath()  # This will connect back to the start
         
         grad = QLinearGradient(0, 0, 0, h)
         c = QColor(255, 255, 255)
@@ -1604,7 +1609,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("prism")
-        self.resize(900, 570) 
+        self.resize(900, 500) 
         self.setAcceptDrops(True)
         self.file_path = None
         self.original_audio = None
