@@ -1,3 +1,7 @@
+<p>
+  <img src="icon.png" alt="prism icon" width="100">
+</p>
+
 prism is a waveform player and effects processor.
 
 it takes audio samples, slices them into pieces, and rearranges them into rhythmic 4-bar loops.  
