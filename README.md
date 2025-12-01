@@ -26,3 +26,5 @@ left mouse to seek across waveform.
 - glue reverb  
 - filter mod  
 - vol/pan mod  
+
+this program is free but [donations are welcome](https://ko-fi.com/geltz)
