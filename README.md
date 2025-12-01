@@ -27,4 +27,4 @@ left mouse to seek across waveform.
 - filter mod  
 - vol/pan mod  
 
-this program is free but [donations are welcome](https://ko-fi.com/geltz)
+this program is free and [donations are welcome](https://ko-fi.com/geltz)
