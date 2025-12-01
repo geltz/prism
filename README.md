@@ -11,20 +11,21 @@ it takes audio samples, slices them into pieces, and rearranges them into rhythm
 left mouse to seek across waveform.  
 
 **buttons**
-- play/pause/stop  
+- play/pause 
 - clear
 - process  
 - export  
 
 **sliders**    
-- grid density
 - bpm
-- spectral wash  
-- bit crush  
+- grid density
+- swing
+- vol/pan  
 - playback rate  
-- sample rate   
-- glue reverb  
-- filter mod  
-- vol/pan mod  
+- tone 
+- crush
+- sample rate
+- filter
+- reverb 
 
 this program is free and [donations are welcome](https://ko-fi.com/geltz)
