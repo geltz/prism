@@ -1646,7 +1646,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("prism")
-        self.resize(900, 550) 
+        self.resize(900, 400) 
         self.setAcceptDrops(True)
         self.file_path = None
         self.original_audio = None
