@@ -1738,7 +1738,7 @@ class MainWindow(QMainWindow):
         # Transport
         transport_layout = QHBoxLayout()
         transport_layout.setContentsMargins(0, 0, 0, 0)
-        transport_layout.setSpacing(10)
+        transport_layout.setSpacing(10) # Horizontal spacing is 10
         self.btn_play = MorphPlayButton()
         self.btn_play.clicked.connect(self.toggle_playback)
         self.btn_play.set_ready(False)
@@ -1748,12 +1748,15 @@ class MainWindow(QMainWindow):
         self.btn_clear.set_ready(False)
         transport_layout.addWidget(self.btn_clear)
         side_layout.addLayout(transport_layout)
-        side_layout.addSpacing(10)
+        
+        # CHANGED: Reduced from 10 to 6. 
+        # Math: 6 (spacer) + 2 (top gap) + 2 (bottom gap) = 10px total visual space
+        side_layout.addSpacing(6)
 
         # Action Buttons
         action_layout = QHBoxLayout()
         action_layout.setContentsMargins(0, 0, 0, 0)
-        action_layout.setSpacing(5)
+        action_layout.setSpacing(10) # Horizontal spacing is 10
         
         self.btn_process = RainbowButton("process")
         self.btn_process.setObjectName("ProcessBtn")
