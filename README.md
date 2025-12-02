@@ -4,7 +4,7 @@
 
 prism is a waveform player and effects processor.
 
-it takes audio samples, slices them into pieces, and rearranges them into rhythmic 4-bar loops.  
+it slices audio into rhythmic 4-bar loops.  
 
 **controls**
 
