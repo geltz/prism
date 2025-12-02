@@ -421,12 +421,13 @@ class PrismLogo(QWidget):
 class GlassFrame(QFrame):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setStyleSheet("GlassFrame { background-color: rgba(255, 255, 255, 0.65); border: 1px solid rgba(255, 255, 255, 0.8); border-radius: 16px; }")
-        shadow = QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(20)
-        shadow.setColor(QColor(63, 108, 155, 15))
-        shadow.setOffset(0, 4)
-        self.setGraphicsEffect(shadow)
+        self.setStyleSheet("""
+            GlassFrame { 
+                background-color: #f6f9fc; 
+                border: none;
+                border-left: 1px solid #d0dbe5; 
+            }
+        """)
 
 class WaveformWidget(QWidget):
     seek_requested = pyqtSignal(float)
@@ -454,12 +455,6 @@ class WaveformWidget(QWidget):
         self.text_anim_timer = QTimer(self)
         self.text_anim_timer.timeout.connect(self.animate_text)
         self.text_anim_timer.start(50)
-
-        shadow = QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(20)
-        shadow.setColor(QColor(63, 108, 155, 15))
-        shadow.setOffset(0, 4)
-        self.setGraphicsEffect(shadow)
     
     def animate_text(self):
         # Only animate if we are showing the empty state text
@@ -573,17 +568,12 @@ class WaveformWidget(QWidget):
         rect = self.rect()
         w, h = rect.width(), rect.height()
 
-        # Background
-        painter.setBrush(QColor(255, 255, 255, 166)) 
-        painter.setPen(QPen(QColor(255, 255, 255, 204), 1)) 
-        painter.drawRoundedRect(rect, 16, 16)
-
-        path = QPainterPath()
-        path.addRoundedRect(QRectF(rect), 16, 16)
-        painter.setClipPath(path)
+        # CHANGED: Removed rounded rect drawing and clipping
+        # Background - Simple fill
+        painter.fillRect(rect, QColor(255, 255, 255, 166)) 
 
         if self.data is None:
-            # ... (Empty state drawing remains the same) ...
+            # (Empty state drawing...)
             grad = QLinearGradient(0, 0, rect.width(), 0)
             for i in range(4):
                 t = i / 3.0
@@ -599,14 +589,13 @@ class WaveformWidget(QWidget):
 
         pm = self._static_pixmap
         if pm:
+            # ... (Existing logic for scanline buffer setup) ...
             pm_w = pm.width()
             sx = pm_w / w if w > 0 else 1.0
 
-            # OPTIMIZATION: Reuse or create buffer
             if self._scanline_buffer is None or self._scanline_buffer.size() != self.size():
                 self._scanline_buffer = QPixmap(self.size())
             
-            # Use the buffer instead of creating new QPixmap(self.size())
             self._scanline_buffer.fill(Qt.GlobalColor.transparent)
             
             cw_painter = QPainter(self._scanline_buffer)
@@ -625,6 +614,7 @@ class WaveformWidget(QWidget):
             painter.drawPixmap(0, 0, self._scanline_buffer)
 
             if self.play_head_pos >= 0:
+                # ... (Existing ripple and playhead logic remains exactly the same) ...
                 px = int(self.play_head_pos * w)
                 
                 # Ripple Effect
@@ -636,7 +626,6 @@ class WaveformWidget(QWidget):
                 source_rect = source_rect_f.toRect().intersected(pm.rect())
                 
                 if not source_rect.isEmpty():
-                    # Note: Copying a small slice is cheap, so we keep this logic
                     wave_slice = pm.copy(source_rect)
                     dest_w = source_rect.width() / sx
                     if dest_w > 0:
@@ -677,7 +666,7 @@ class PrismSlider(QSlider):
         super().__init__(orientation, parent)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setFixedHeight(26)
-        # UPDATED: Removed setMouseTracking(True) as we don't need hover anymore
+        # Removed setMouseTracking(True) as we don't need hover anymore
         
         self.phase = 0.0
         self.morph_progress = 0.0 # Renamed for clarity
@@ -688,8 +677,9 @@ class PrismSlider(QSlider):
 
     def animate(self):
         self.phase = (self.phase + 0.1) % (2 * math.pi)
-        
-        target = 1.0 if self.isSliderDown() else 0.0
+
+        target = 0.0 
+
         dist = target - self.morph_progress
 
         speed = 0.9 if target > 0.6 else 0.3
@@ -698,8 +688,6 @@ class PrismSlider(QSlider):
         
         if abs(dist) > 0.001 or self.isSliderDown():
             self.update()
-
-    # UPDATED: Removed enterEvent and leaveEvent entirely
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -896,8 +884,8 @@ class RainbowButton(QPushButton):
     def animate(self):
         self.phase = (self.phase + 0.005) % 1.0
         if self.ripple_alpha > 0:
-            self.ripple_r += 2.5
-            self.ripple_alpha -= 0.04
+            self.ripple_r += 4.5
+            self.ripple_alpha -= 0.06
             if self.ripple_alpha < 0: self.ripple_alpha = 0.0
             self.update()
         elif self.is_hovering:
@@ -915,7 +903,7 @@ class RainbowButton(QPushButton):
         # Haptic Ripple Trigger
         self.click_pos = QPointF(event.pos())
         self.ripple_r = 5.0
-        self.ripple_alpha = 0.6
+        self.ripple_alpha = 0.3
         super().mousePressEvent(event)
 
     def paintEvent(self, event):
@@ -1060,7 +1048,7 @@ class StatusRainbowLabel(QLabel):
         self.timer.start(50)
 
     def trigger_excitement(self):
-        self.current_speed = 0.15
+        self.current_speed = 0.2
         self.target_speed = self.base_speed
 
     def animate(self):
@@ -1088,39 +1076,98 @@ class PastelFileLabel(QLabel):
     def __init__(self, text="no file loaded", parent=None):
         super().__init__(text, parent)
         self.setObjectName("FileLabel")
-        self.phase = 0.0
         
-        # FIXED: Enforce identical height and font to ExportMessageLabel
-        self.setMinimumHeight(24)
         font = QFont("Segoe UI", 10)
-        font.setBold(True)
+        font.setWeight(QFont.Weight.DemiBold)
         self.setFont(font)
         
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.setMinimumHeight(30)
+        self.setMinimumWidth(200)
+        
+        self.phase = 0.0
+        self.pan_phase = 0.0
+        self._opacity = 1.0 
         
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.animate)
         self.timer.start(50)
 
+    def get_opacity(self): return self._opacity
+    def set_opacity(self, o): 
+        self._opacity = max(0.0, min(1.0, o))
+        self.update()
+    
+    opacity = pyqtProperty(float, get_opacity, set_opacity)
+
     def animate(self):
         self.phase = (self.phase + 0.002) % 1.0
+        # VARIABLE TO CHANGE: Increased from 0.015 to 0.04 for faster scroll
+        self.pan_phase += 0.04
         self.update()
 
     def paintEvent(self, event):
+        if self._opacity <= 0.01: return
+
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        rect = self.rect()
+        painter.setOpacity(self._opacity)
         
-        grad = QLinearGradient(0, 0, rect.width(), 0)
+        rect = self.rect()
+        w, h = rect.width(), rect.height()
+        
+        fm = QFontMetrics(self.font())
+        txt = self.text()
+        txt_w = fm.horizontalAdvance(txt)
+        txt_h = fm.capHeight()
+        
+        # Panning Logic
+        x_offset = 0
+        is_panning = False
+        
+        if txt_w > w:
+            is_panning = True
+            overflow = txt_w - w + 40 
+            cycle = math.sin(self.pan_phase)
+            if cycle > 0.8: cycle = 0.8
+            if cycle < -0.8: cycle = -0.8
+            norm = (cycle + 0.8) / 1.6 
+            x_offset = -1 * (norm * overflow)
+            x_offset += 20 
+        else:
+            x_offset = (w - txt_w) / 2
+
+        # MATCHING Y-OFFSET
+        y_offset = (h + txt_h) / 2 - 2 
+
+        grad = QLinearGradient(0, 0, w, 0)
         for i in range(4):
             t = i / 3.0
             hue = (self.phase + t * 0.3) % 1.0
-            col = QColor.fromHslF(hue, 0.20, 0.65, 1.0)
+            col = QColor.fromHslF(hue, 0.30, 0.60, 1.0)
             grad.setColorAt(t, col)
-
+        
         painter.setPen(QPen(QBrush(grad), 0))
         painter.setFont(self.font())
-        painter.drawText(rect, self.alignment(), self.text())
+        
+        painter.save()
+        painter.setClipRect(rect)
+        painter.drawText(int(x_offset), int(y_offset), txt)
+        painter.restore()
+
+        if is_panning:
+            fade_w = 20
+            c_bg = QColor("#f6f9fc") 
+            l_grad = QLinearGradient(0, 0, fade_w, 0)
+            c_bg.setAlpha(255); l_grad.setColorAt(0.0, c_bg)
+            c_bg.setAlpha(0);   l_grad.setColorAt(1.0, c_bg)
+            painter.fillRect(0, 0, fade_w, h, l_grad)
+            
+            r_grad = QLinearGradient(w - fade_w, 0, w, 0)
+            c_bg.setAlpha(0);   r_grad.setColorAt(0.0, c_bg)
+            c_bg.setAlpha(255); r_grad.setColorAt(1.0, c_bg)
+            painter.fillRect(w - fade_w, 0, fade_w, h, r_grad)
 
 class ExportMessageLabel(QLabel):
     def __init__(self, text="", parent=None):
@@ -1128,57 +1175,64 @@ class ExportMessageLabel(QLabel):
         self._opacity = 0.0 
         self.phase = 0.0
         
-        # FIXED: Enforce identical height and font to PastelFileLabel
-        self.setMinimumHeight(24)
         font = QFont("Segoe UI", 10)
-        font.setBold(True)
+        font.setWeight(QFont.Weight.Bold)
         self.setFont(font)
         
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.setMinimumHeight(30)
+        self.setMinimumWidth(200)
         
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.animate)
         self.timer.start(50)
 
-    def animate(self):
-        self.phase = (self.phase + 0.01) % 1.0
-        if self._opacity > 0.01:
-            self.update()
-
-    def get_opacity(self): 
-        return self._opacity
-
+    def get_opacity(self): return self._opacity
     def set_opacity(self, o): 
         self._opacity = max(0.0, min(1.0, o))
         self.update()
 
     opacity = pyqtProperty(float, get_opacity, set_opacity)
 
+    def animate(self):
+        self.phase = (self.phase + 0.01) % 1.0
+        if self._opacity > 0.01:
+            self.update()
+
     def paintEvent(self, event):
-        if self._opacity <= 0: return
+        if self._opacity <= 0.01: return
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setOpacity(self._opacity)
         
-        # FIXED: Use rect() instead of contentsRect() to match FileLabel behavior
         rect = self.rect()
+        w, h = rect.width(), rect.height()
+
+        # 1. Calculate Text Position exactly like PastelFileLabel
+        fm = QFontMetrics(self.font())
+        txt = self.text()
+        txt_w = fm.horizontalAdvance(txt)
+        txt_h = fm.capHeight()
+
+        # Always centered
+        x_offset = (w - txt_w) / 2
+        # MATCHING Y-OFFSET
+        y_offset = (h + txt_h) / 2 - 2 
         
-        grad = QLinearGradient(0, 0, self.width(), 0)
+        # 2. Gradient
+        grad = QLinearGradient(0, 0, w, 0)
         shift = self.phase
-        
         c1 = QColor("#8da6c0") 
         c2 = QColor.fromHslF(shift, 0.25, 0.65, 1.0)
         c3 = QColor("#8da6c0")
-        
-        c1.setAlphaF(self._opacity)
-        c2.setAlphaF(self._opacity)
-        c3.setAlphaF(self._opacity)
-        grad.setColorAt(0.0, c1)
-        grad.setColorAt(0.5, c2)
-        grad.setColorAt(1.0, c3)
+        grad.setColorAt(0.0, c1); grad.setColorAt(0.5, c2); grad.setColorAt(1.0, c3)
         
         painter.setPen(QPen(QBrush(grad), 0))
         painter.setFont(self.font())
-        painter.drawText(rect, self.alignment(), self.text())
+        
+        # 3. Draw using calculated offsets
+        painter.drawText(int(x_offset), int(y_offset), txt)
 
 class PastelClearButton(QPushButton):
     cleared = pyqtSignal()
@@ -1475,28 +1529,56 @@ class DebugLogWidget(QWidget):
 
     def layout_items(self, width):
         fm = QFontMetrics(self.log_font)
-        x_start = 10
-        x = x_start
         y_start = 15 
         y = y_start
         line_h = 20
-        col_width = width
+        spacing = 20
         
+        # Buffer lines to calculate centering
+        lines = []
+        current_line_items = []
+        current_line_width = 0
+        
+        # 1. Group items into lines
         for item in self.items:
             w = fm.horizontalAdvance(item['text'])
-            if x + w > col_width - 10:
-                x = x_start
-                y += line_h
             
-            item['target_x'] = float(x)
-            item['target_y'] = float(y)
+            # Check if this item fits on current line (unless it's the first item)
+            if current_line_items and (current_line_width + w > width - 20):
+                # Finish current line
+                lines.append((current_line_items, current_line_width))
+                current_line_items = []
+                current_line_width = 0
             
-            # Snap new items to position immediately to avoid flying in from (0,0)
-            if item['x'] == 0.0 and item['y'] == 0.0:
-                item['x'] = float(x)
-                item['y'] = float(y)
+            # Add spacing if not first item
+            if current_line_items:
+                current_line_width += spacing
             
-            x += w + 20
+            current_line_items.append((item, w))
+            current_line_width += w
+            
+        # Append the last line
+        if current_line_items:
+            lines.append((current_line_items, current_line_width))
+
+        # 2. Position items centered
+        for line_items, line_w in lines:
+            # Center calculation: (Total Width - Content Width) / 2
+            start_x = (width - line_w) / 2
+            current_x = start_x
+            
+            for item, w in line_items:
+                item['target_x'] = float(current_x)
+                item['target_y'] = float(y)
+                
+                # Snap new items immediately
+                if item['x'] == 0.0 and item['y'] == 0.0:
+                    item['x'] = float(current_x)
+                    item['y'] = float(y)
+                    
+                current_x += w + spacing
+            
+            y += line_h
 
     def animate(self):
         if not self.items:
@@ -1564,7 +1646,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("prism")
-        self.resize(900, 500) 
+        self.resize(900, 550) 
         self.setAcceptDrops(True)
         self.file_path = None
         self.original_audio = None
@@ -1596,8 +1678,8 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
         
         main_layout = QHBoxLayout(central)
-        main_layout.setContentsMargins(10, 10, 10, 10) 
-        main_layout.setSpacing(10) 
+        main_layout.setContentsMargins(0, 0, 0, 0) 
+        main_layout.setSpacing(0)
 
         # --- LEFT: Viewport ---
         self.viewport = QVBoxLayout()
@@ -1611,7 +1693,7 @@ class MainWindow(QMainWindow):
         
         # --- RIGHT: Sidebar ---
         self.sidebar = GlassFrame()
-        self.sidebar.setFixedWidth(300) 
+        self.sidebar.setFixedWidth(330) 
         side_layout = QVBoxLayout(self.sidebar)
         side_layout.setContentsMargins(12, 12, 12, 12) 
         side_layout.setSpacing(2) 
@@ -1671,7 +1753,7 @@ class MainWindow(QMainWindow):
         # Action Buttons
         action_layout = QHBoxLayout()
         action_layout.setContentsMargins(0, 0, 0, 0)
-        action_layout.setSpacing(10)
+        action_layout.setSpacing(5)
         
         self.btn_process = RainbowButton("process")
         self.btn_process.setObjectName("ProcessBtn")
@@ -1690,32 +1772,41 @@ class MainWindow(QMainWindow):
         action_layout.addWidget(self.btn_process)
         action_layout.addWidget(self.btn_save)
         side_layout.addLayout(action_layout)
-        side_layout.addSpacing(15)
+        
+        # CHANGED: Reduced spacing to move footer up
+        side_layout.addSpacing(5) 
 
-        # Footer (Centered)
+        # --- FOOTER & ANIMATION SETUP ---
         footer_layout = QHBoxLayout()
         footer_layout.setContentsMargins(0, 0, 0, 0)
         footer_layout.setSpacing(0)
         
         footer_layout.addStretch() 
+        
+        # 1. File Label
         self.lbl_file = PastelFileLabel("no file loaded")
-        self.lbl_file.setMinimumHeight(24)
+        # Ensure it has a minimum height so it doesn't disappear
+        self.lbl_file.setMinimumHeight(28) 
         footer_layout.addWidget(self.lbl_file)
         
+        # 2. Export Message (Hidden by default)
         self.lbl_saved_msg = ExportMessageLabel("")
+        self.lbl_saved_msg.setMinimumHeight(28)
         self.lbl_saved_msg.setVisible(False)
-        # REMOVED: self.lbl_saved_msg.setStyleSheet("padding-left: 25px;") 
-        
-        self.fade_anim = QPropertyAnimation(self.lbl_saved_msg, b"opacity")
-        self.fade_anim.setEasingCurve(QEasingCurve.Type.OutQuad)
+        self.lbl_saved_msg.set_opacity(0.0)
         footer_layout.addWidget(self.lbl_saved_msg)
+        
+        # Initialize Animations
+        self.anim_export_fade = QPropertyAnimation(self.lbl_saved_msg, b"opacity")
+        self.anim_export_fade.setEasingCurve(QEasingCurve.Type.InOutQuad)
+        
+        self.anim_file_fade = QPropertyAnimation(self.lbl_file, b"opacity")
+        self.anim_file_fade.setEasingCurve(QEasingCurve.Type.InOutQuad)
         
         footer_layout.addStretch()
         
         side_layout.addLayout(footer_layout)
-        
-        # CHANGED: Reduced from 5 to 0 (Debug log starts immediately)
-        side_layout.addSpacing(0)
+        side_layout.addSpacing(5) 
 
         # Debug Log
         self.debug_log = DebugLogWidget()
@@ -1759,7 +1850,11 @@ class MainWindow(QMainWindow):
         self.wave_view.update_static_waveform()
         self.wave_view.update()
         
+        # FIX: Ensure File Label is reset to visible
         self.lbl_file.setText("no file loaded")
+        self.lbl_file.set_opacity(1.0)
+        self.lbl_file.setVisible(True)
+        
         self.lbl_saved_msg.setVisible(False)
         self.lbl_status.setText("status: idle")
         
@@ -1770,7 +1865,13 @@ class MainWindow(QMainWindow):
     def load_file(self, path):
         self.stop_playback()
         self.file_path = path
+        
+        # FIX: Ensure File Label is reset to visible
         self.lbl_file.setText(os.path.basename(path).lower())
+        self.lbl_file.set_opacity(1.0)
+        self.lbl_file.setVisible(True)
+        self.lbl_saved_msg.setVisible(False)
+        
         self.btn_clear.set_ready(True)
         self.btn_play.set_ready(True)
         try:
@@ -1897,16 +1998,6 @@ class MainWindow(QMainWindow):
             return
             
         self.logo.trigger_excitement()
-        if not hasattr(self, 'msg_timer'):
-            self.msg_timer = QTimer(self)
-            self.msg_timer.setSingleShot(True)
-            self.msg_timer.timeout.connect(self.start_fade_out)
-
-        self.msg_timer.stop()
-        self.fade_anim.stop()
-        
-        # Stop collapse anim if it exists (though we aren't using it now)
-        if hasattr(self, 'collapse_anim'): self.collapse_anim.stop()
         
         home_dir = os.path.expanduser("~")
         save_dir = os.path.join(home_dir, "Music", "prism")
@@ -1921,29 +2012,73 @@ class MainWindow(QMainWindow):
         try:
             AudioEngine.save_file(save_path, self.processed_audio, self.sr)
             self.lbl_status.setText("status: exported")
-            self.lbl_saved_msg.setText("saved to: Music/prism")
             
-            # SWAP LOGIC: Hide file, Show export message
-            self.lbl_file.setVisible(False)
-            self.lbl_saved_msg.setVisible(True)
-            self.lbl_saved_msg.set_opacity(0.0)
+            # 1. Stop any running animations
+            self.anim_file_fade.stop()
+            self.anim_export_fade.stop()
             
-            # Fade In
-            self.fade_anim.setDuration(300)
-            self.fade_anim.setStartValue(0.0)
-            self.fade_anim.setEndValue(1.0)
+            # 2. Fade OUT File Label
+            self.anim_file_fade.setDuration(200)
+            self.anim_file_fade.setStartValue(self.lbl_file.opacity)
+            self.anim_file_fade.setEndValue(0.0)
             
-            try: self.fade_anim.finished.disconnect()
+            try: self.anim_file_fade.finished.disconnect()
             except: pass
+            self.anim_file_fade.finished.connect(self._on_file_faded_out_for_export)
             
-            self.fade_anim.finished.connect(self.schedule_fade_out)
-            self.fade_anim.start()
+            self.anim_file_fade.start()
             
         except Exception as e: 
             QMessageBox.critical(self, "error", f"could not save: {e}")
 
+    def _on_file_faded_out_for_export(self):
+        # 3. Swap and Fade IN Export Message
+        self.lbl_file.setVisible(False)
+        self.lbl_saved_msg.setText("saved to: Music/prism")
+        self.lbl_saved_msg.set_opacity(0.0)
+        self.lbl_saved_msg.setVisible(True)
+        
+        self.anim_export_fade.setDuration(300)
+        self.anim_export_fade.setStartValue(0.0)
+        self.anim_export_fade.setEndValue(1.0)
+        
+        try: self.anim_export_fade.finished.disconnect()
+        except: pass
+        self.anim_export_fade.finished.connect(self.schedule_fade_out)
+        
+        self.anim_export_fade.start()
+
     def schedule_fade_out(self):
-        self.msg_timer.start(2000)
+        # 4. Wait 2 seconds (No self.msg_timer needed here)
+        QTimer.singleShot(2000, self.start_return_sequence)
+
+    def start_return_sequence(self):
+        # 5. Fade OUT Export Message
+        self.anim_export_fade.stop()
+        try: self.anim_export_fade.finished.disconnect()
+        except: pass
+        
+        self.anim_export_fade.setDuration(500)
+        self.anim_export_fade.setStartValue(self.lbl_saved_msg.opacity)
+        self.anim_export_fade.setEndValue(0.0)
+        
+        self.anim_export_fade.finished.connect(self._on_export_faded_out)
+        self.anim_export_fade.start()
+
+    def _on_export_faded_out(self):
+        # 6. Swap and Fade IN File Label
+        self.lbl_saved_msg.setVisible(False)
+        self.lbl_file.set_opacity(0.0)
+        self.lbl_file.setVisible(True)
+        
+        self.anim_file_fade.setDuration(300)
+        self.anim_file_fade.setStartValue(0.0)
+        self.anim_file_fade.setEndValue(1.0)
+        
+        try: self.anim_file_fade.finished.disconnect()
+        except: pass
+        
+        self.anim_file_fade.start()
 
     def start_fade_out(self):
         self.fade_anim.stop()
