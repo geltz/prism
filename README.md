@@ -2,8 +2,8 @@
   <img src="icon.png" alt="prism icon" width="100">
 </p>
 
-prism is a waveform player and effects processor.
-it slices audio into rhythmic 4-bar loops.  
+prism is a waveform player and effects processor.  
+it slices audio into rhythmic 4-bar loops.    
 
 **controls**
 
