@@ -48,6 +48,12 @@ class AudioEngine:
         env = np.exp(-t * (4.0 + (1.0-room_size)*10))
         ir = signal.lfilter(*signal.butter(1, 0.2 * (1-damp), btype='low'), noise * env)
         wet_sig = signal.fftconvolve(padded_x, ir, mode='full')[:len(x)]
+        
+        # --- Highpass wet signal (~300Hz) to prevent low-end mud ---
+        sos_hp = signal.butter(1, 300, 'hp', fs=sr, output='sos')
+        wet_sig = signal.sosfilt(sos_hp, wet_sig)
+        # ----------------------------------------------------------------
+        
         wet_sig = wet_sig / (np.max(np.abs(wet_sig)) + 1e-9)
         wet_stereo = np.column_stack((wet_sig, wet_sig))
         out = (1 - mix) * x + mix * wet_stereo
@@ -261,21 +267,26 @@ class AudioEngine:
     @staticmethod
     def process(audio, sr, params):
         bpm = params.get('bpm', 120.0)
-        slices = AudioEngine.make_slice_library(audio, sr)
-        
-        # UPDATED: Hardcoded stutter to 0.15 for sparse, internal rhythmic texture
-        # without user control.
-        y = AudioEngine.generate_4bar_loop(
-            slices, sr, 
-            density=params['glitch'], 
-            bpm=bpm,
-            swing=params.get('swing', 0.0),
-            stutter=0.15 
-        )
+
+        if not params.get('chops_enabled', True):
+            # Bypass slicing/looping, use full original audio
+            y = audio.copy()
+        else:
+            # Original Slicing Logic
+            slices = AudioEngine.make_slice_library(audio, sr)
+            
+            # Hardcoded stutter to 0.15 for sparse, internal rhythmic texture
+            y = AudioEngine.generate_4bar_loop(
+                slices, sr, 
+                density=params['glitch'], 
+                bpm=bpm,
+                swing=params.get('swing', 0.0),
+                stutter=0.15 
+            )
         
         y = AudioEngine.apply_rand_filter(y, sr, intensity=params['filter_amt'], bpm=bpm)
         
-        # UPDATED: Replaced original vol_pan call with the new specific logic
+        # Replaced original vol_pan call with the new specific logic
         y = AudioEngine.apply_vol_pan(y, sr, intensity=params['vol_pan_amt'], bpm=bpm)
         
         if y.ndim == 1: y = np.column_stack((y, y))
@@ -351,6 +362,8 @@ STYLES = """
 """
 
 class PrismLogo(QWidget):
+    clicked = pyqtSignal()
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setMinimumHeight(45)
@@ -358,23 +371,48 @@ class PrismLogo(QWidget):
         self.base_speed = 0.005
         self.current_speed = self.base_speed
         self.target_speed = self.base_speed
+        self.active = True
+        
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.animate)
         # REDUCED CPU: 40ms (~25fps) is enough for a slow logo
         self.timer.start(40)
 
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.active = not self.active
+            self.clicked.emit()
+            
+            # Adjust speed based on state
+            self.target_speed = 0.005 if self.active else 0.0
+            self.update()
+
     def trigger_excitement(self):
-        self.current_speed = 0.1
-        self.target_speed = self.base_speed
+        if self.active:
+            self.current_speed = 0.1
+            self.target_speed = self.base_speed
 
     def animate(self):
-        self.current_speed = self.current_speed * 0.96 + self.target_speed * 0.04
+        # If inactive, slow down to a halt
+        target = self.target_speed if self.active else 0.0
+        self.current_speed = self.current_speed * 0.96 + target * 0.04
         self.phase = (self.phase + self.current_speed) % 1.0
+        
+        if not self.active and self.current_speed < 0.0001:
+            return 
+            
         self.update()
 
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        # Dim when inactive
+        if not self.active:
+            painter.setOpacity(0.4)
+            
         w, h = self.width(), self.height()
         cx, cy = w / 2, h / 2
         
@@ -589,7 +627,6 @@ class WaveformWidget(QWidget):
 
         pm = self._static_pixmap
         if pm:
-            # ... (Existing logic for scanline buffer setup) ...
             pm_w = pm.width()
             sx = pm_w / w if w > 0 else 1.0
 
@@ -614,7 +651,6 @@ class WaveformWidget(QWidget):
             painter.drawPixmap(0, 0, self._scanline_buffer)
 
             if self.play_head_pos >= 0:
-                # ... (Existing ripple and playhead logic remains exactly the same) ...
                 px = int(self.play_head_pos * w)
                 
                 # Ripple Effect
@@ -882,7 +918,9 @@ class RainbowButton(QPushButton):
         self.setFixedHeight(32)
 
     def animate(self):
-        self.phase = (self.phase + 0.005) % 1.0
+        # Use wall-clock time so phase is continuous and doesn't reset on UI updates
+        self.phase = (time.time() * 0.5) % 1.0
+        
         if self.ripple_alpha > 0:
             self.ripple_r += 4.5
             self.ripple_alpha -= 0.06
@@ -890,7 +928,7 @@ class RainbowButton(QPushButton):
             self.update()
         elif self.is_hovering:
             self.update()
-
+    
     def enterEvent(self, event):
         self.is_hovering = True
         super().enterEvent(event)
@@ -900,7 +938,6 @@ class RainbowButton(QPushButton):
         super().leaveEvent(event)
 
     def mousePressEvent(self, event):
-        # Haptic Ripple Trigger
         self.click_pos = QPointF(event.pos())
         self.ripple_r = 5.0
         self.ripple_alpha = 0.3
@@ -921,6 +958,7 @@ class RainbowButton(QPushButton):
         for i in range(4):
             t = i / 3.0
             hue = (self.phase + (t * 0.5)) % 1.0
+            # Subtle hover brighten
             opacity = 200 if self.is_hovering else 150
             col = QColor.fromHslF(hue, 0.6, 0.92, opacity/255.0)
             grad_bg.setColorAt(t, col)
@@ -1296,7 +1334,6 @@ class MorphPlayButton(QWidget):
     
     def __init__(self, parent=None):
         super().__init__(parent)
-        # MATCHING SIZE: Height 32, Expanding Width
         self.setFixedHeight(32)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -1306,7 +1343,8 @@ class MorphPlayButton(QWidget):
         self._hover = False
         
         self.ready_progress = 0.0 
-        self.icon_progress = 0.0 
+        self.icon_progress = 0.0
+        self.hover_progress = 0.0 # New hover animation state
         
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.animate)
@@ -1325,8 +1363,14 @@ class MorphPlayButton(QWidget):
     def animate(self):
         t_ready = 1.0 if self._ready else 0.0
         self.ready_progress += (t_ready - self.ready_progress) * 0.15
+        
         t_icon = 1.0 if self._playing else 0.0
         self.icon_progress += (t_icon - self.icon_progress) * 0.2
+        
+        # Fast subtle fade for hover
+        t_hover = 1.0 if (self._ready and self._hover) else 0.0
+        self.hover_progress += (t_hover - self.hover_progress) * 0.25
+        
         self.update()
 
     def paintEvent(self, e):
@@ -1335,13 +1379,18 @@ class MorphPlayButton(QWidget):
         r = self.rect()
         c = QRectF(r).center()
         
-        # Background
-        bg_col = QColor("#ecf2f7")
-        if self._ready and self._hover: bg_col = QColor("#dfe7ef")
+        # Interpolate Background Color: #ecf2f7 -> #dfe7ef
+        base_r, base_g, base_b = 236, 242, 247
+        hover_r, hover_g, hover_b = 223, 231, 239
+        
+        k = self.hover_progress
+        curr_r = int(base_r + (hover_r - base_r) * k)
+        curr_g = int(base_g + (hover_g - base_g) * k)
+        curr_b = int(base_b + (hover_b - base_b) * k)
+        
+        bg_col = QColor(curr_r, curr_g, curr_b)
         p.setBrush(bg_col)
         p.setPen(Qt.PenStyle.NoPen)
-        
-        # MATCHING SHAPE: Radius 6 (same as RainbowButton)
         p.drawRoundedRect(r, 6, 6)
         
         # Foreground Color
@@ -1364,7 +1413,6 @@ class MorphPlayButton(QWidget):
             p.scale(s, s)
             t = self.icon_progress
             
-            # Morph: Play Tri -> Pause Bars
             p1x = -4.0 * (1.0-t) + (-5.0) * t
             p2x = -4.0 * (1.0-t) + (-5.0) * t
             tip_x = 6.0 * (1.0-t) + (-2.0) * t
@@ -1389,14 +1437,14 @@ class MorphClearButton(QWidget):
     
     def __init__(self, parent=None):
         super().__init__(parent)
-        # MATCHING SIZE: Height 32, Expanding Width
         self.setFixedHeight(32)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         
         self._ready = False
         self._hover = False
-        self.ready_progress = 0.0 
+        self.ready_progress = 0.0
+        self.hover_progress = 0.0 # New hover animation state
         
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.animate)
@@ -1414,6 +1462,11 @@ class MorphClearButton(QWidget):
     def animate(self):
         t_ready = 1.0 if self._ready else 0.0
         self.ready_progress += (t_ready - self.ready_progress) * 0.15
+        
+        # Fast subtle fade for hover
+        t_hover = 1.0 if (self._ready and self._hover) else 0.0
+        self.hover_progress += (t_hover - self.hover_progress) * 0.25
+        
         self.update()
 
     def paintEvent(self, e):
@@ -1423,9 +1476,16 @@ class MorphClearButton(QWidget):
         r = self.rect()
         c = QRectF(r).center()
         
-        bg_col = QColor("#ecf2f7")
-        if self._ready and self._hover: bg_col = QColor("#fce8e8")
+        # Interpolate Background Color: #ecf2f7 -> #fce8e8
+        base_r, base_g, base_b = 236, 242, 247
+        hover_r, hover_g, hover_b = 252, 232, 232
         
+        k = self.hover_progress
+        curr_r = int(base_r + (hover_r - base_r) * k)
+        curr_g = int(base_g + (hover_g - base_g) * k)
+        curr_b = int(base_b + (hover_b - base_b) * k)
+        
+        bg_col = QColor(curr_r, curr_g, curr_b)
         p.setBrush(bg_col)
         p.setPen(Qt.PenStyle.NoPen)
         p.drawRoundedRect(r, 6, 6)
@@ -1442,13 +1502,10 @@ class MorphClearButton(QWidget):
 
         if self.ready_progress > 0.01:
             p.setOpacity(self.ready_progress)
-            
-            # MATCHING FONT: Size 9, Bold, All Lowercase
             font = QFont("Segoe UI", 9)
             font.setBold(True)
             font.setCapitalization(QFont.Capitalization.AllLowercase)
             p.setFont(font)
-            
             p.setPen(txt_col)
             p.drawText(r, Qt.AlignmentFlag.AlignCenter, "clear")
 
@@ -1459,6 +1516,7 @@ class DebugLogWidget(QWidget):
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.items = [] 
         self.wave_phase = 0.0 
+        self.sticky_msg = None # Persistent state
         
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.animate)
@@ -1476,22 +1534,41 @@ class DebugLogWidget(QWidget):
                 self.timer.start(10)
         super().resizeEvent(event)
 
+    def set_sticky_status(self, text):
+        self.sticky_msg = text
+        
+        # Clear old status logic
+        self.items = [i for i in self.items if i.get('identity') != 'sticky_status']
+        
+        if text:
+            item = {
+                'identity': 'sticky_status',
+                'text': text,
+                'scramble_val': text, 
+                'scramble_time': 5, 
+                'scramble_delay': 0,
+                'x': 0.0, 'y': 0.0, 
+                'target_x': 0.0, 'target_y': 0.0,
+                'alpha': 0.0
+            }
+            self.items.append(item)
+            
+        self.layout_items(self.width())
+        self.timer.start(20)
+
     def log_process(self, params, time_ms):
-        # 1. Map existing items by identity for reuse
+        # 1. Map existing items
         existing_map = {item.get('identity'): item for item in self.items}
         new_items = []
         
-        # Helper to create or update items
         def add_item(identity, text):
             if identity in existing_map:
-                # UPDATE existing: No scramble, just text change
                 item = existing_map[identity]
                 item['text'] = text
                 item['scramble_val'] = text
-                item['scramble_time'] = 0 # Stop/Prevent scramble
+                item['scramble_time'] = 0 
                 new_items.append(item)
             else:
-                # CREATE new: Full scramble
                 item = {
                     'identity': identity,
                     'text': text,
@@ -1504,25 +1581,24 @@ class DebugLogWidget(QWidget):
                 }
                 new_items.append(item)
 
-        # 2. Build Data List
+        # 2. Build List
         timestamp = time.strftime("%H:%M:%S")
-        
-        # Header
         add_item('__header__', f"[{timestamp}] done::{time_ms}ms")
         
-        # Params
         for k, v in params.items():
-            if k in ['bpm', 'sr_select']: continue 
+            if k in ['bpm', 'sr_select', 'chops_enabled']: continue 
             if isinstance(v, (int, float)) and v > 0.01:
                 key_short = k.replace("_", " ")
                 if len(key_short) > 10: key_short = key_short[:9] + "."
-                # Identity is the parameter name 'k'
                 add_item(k, f"{key_short}:{v:.2f}")
         
-        # State
         add_item('__state__', "state:active")
         
-        # 3. Apply changes and layout
+        # CRITICAL FIX: Re-append sticky message if it exists
+        if self.sticky_msg:
+            add_item('sticky_status', self.sticky_msg)
+        
+        # 3. Apply
         self.items = new_items
         self.layout_items(self.width())
         self.timer.start(20)
@@ -1534,50 +1610,36 @@ class DebugLogWidget(QWidget):
         line_h = 20
         spacing = 20
         
-        # Buffer lines to calculate centering
         lines = []
         current_line_items = []
         current_line_width = 0
         
-        # 1. Group items into lines
         for item in self.items:
             w = fm.horizontalAdvance(item['text'])
-            
-            # Check if this item fits on current line (unless it's the first item)
             if current_line_items and (current_line_width + w > width - 20):
-                # Finish current line
                 lines.append((current_line_items, current_line_width))
                 current_line_items = []
                 current_line_width = 0
             
-            # Add spacing if not first item
             if current_line_items:
                 current_line_width += spacing
             
             current_line_items.append((item, w))
             current_line_width += w
             
-        # Append the last line
         if current_line_items:
             lines.append((current_line_items, current_line_width))
 
-        # 2. Position items centered
         for line_items, line_w in lines:
-            # Center calculation: (Total Width - Content Width) / 2
             start_x = (width - line_w) / 2
             current_x = start_x
-            
             for item, w in line_items:
                 item['target_x'] = float(current_x)
                 item['target_y'] = float(y)
-                
-                # Snap new items immediately
                 if item['x'] == 0.0 and item['y'] == 0.0:
                     item['x'] = float(current_x)
                     item['y'] = float(y)
-                    
                 current_x += w + spacing
-            
             y += line_h
 
     def animate(self):
@@ -1589,7 +1651,6 @@ class DebugLogWidget(QWidget):
         rng = np.random.default_rng()
         
         for item in self.items:
-            # 1. Smooth Move
             dx = item['target_x'] - item['x']
             dy = item['target_y'] - item['y']
             if abs(dx) > 0.1 or abs(dy) > 0.1:
@@ -1599,12 +1660,10 @@ class DebugLogWidget(QWidget):
                 item['x'] = item['target_x']
                 item['y'] = item['target_y']
 
-            # 2. Fade In
             if item['alpha'] < 1.0:
                 item['alpha'] += 0.05
                 if item['alpha'] > 1.0: item['alpha'] = 1.0
             
-            # 3. Matrix Scramble
             if item['scramble_time'] > 0:
                 item['scramble_delay'] += 1
                 if item['scramble_delay'] > 2:
@@ -1646,14 +1705,16 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("prism")
-        self.resize(900, 400) 
+        self.resize(900, 550) 
         self.setAcceptDrops(True)
         self.file_path = None
         self.original_audio = None
         self.processed_audio = None
         self.sr = 44100
         self.temp_file = None
-        self.is_processing = False # Logic Lock
+        self.is_processing = False 
+        
+        self.chops_enabled = True # Default state
         
         self.last_wall_clock = 0.0
         self.last_media_pos = 0
@@ -1701,6 +1762,7 @@ class MainWindow(QMainWindow):
         # Header
         self.logo = PrismLogo()
         self.logo.setMinimumHeight(40)
+        self.logo.clicked.connect(self.toggle_chops) # Connect new signal
         side_layout.addWidget(self.logo)
         self.lbl_status = StatusRainbowLabel("status: idle")
         side_layout.addWidget(self.lbl_status)
@@ -1952,6 +2014,11 @@ class MainWindow(QMainWindow):
             self.wave_view.set_play_head(0)
             self.anim_timer.stop()
 
+    def toggle_chops(self):
+        self.chops_enabled = not self.chops_enabled
+        msg = "" if self.chops_enabled else "[chops disabled]"
+        self.debug_log.set_sticky_status(msg)
+
     def start_processing(self):
         # LOGIC LOCK: Check if we have file and aren't already busy
         if self.is_processing or self.original_audio is None: 
@@ -1963,7 +2030,11 @@ class MainWindow(QMainWindow):
         
         self._proc_start_time = time.perf_counter()
         
-        self.thread = ProcessThread(self.original_audio, self.sr, self.params.copy())
+        # Inject chops_enabled state
+        p = self.params.copy()
+        p['chops_enabled'] = self.chops_enabled
+        
+        self.thread = ProcessThread(self.original_audio, self.sr, p)
         self.thread.finished_ok.connect(self.processing_done)
         self.thread.error.connect(self.processing_error)
         self.thread.start()
@@ -2056,12 +2127,12 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(2000, self.start_return_sequence)
 
     def start_return_sequence(self):
-        # 5. Fade OUT Export Message
+        # 5. Fade OUT Export Message (Faster)
         self.anim_export_fade.stop()
         try: self.anim_export_fade.finished.disconnect()
         except: pass
         
-        self.anim_export_fade.setDuration(500)
+        self.anim_export_fade.setDuration(200) # Reduced from 500
         self.anim_export_fade.setStartValue(self.lbl_saved_msg.opacity)
         self.anim_export_fade.setEndValue(0.0)
         
@@ -2069,12 +2140,12 @@ class MainWindow(QMainWindow):
         self.anim_export_fade.start()
 
     def _on_export_faded_out(self):
-        # 6. Swap and Fade IN File Label
+        # 6. Swap and Fade IN File Label (Faster)
         self.lbl_saved_msg.setVisible(False)
         self.lbl_file.set_opacity(0.0)
         self.lbl_file.setVisible(True)
         
-        self.anim_file_fade.setDuration(300)
+        self.anim_file_fade.setDuration(150) # Reduced from 300
         self.anim_file_fade.setStartValue(0.0)
         self.anim_file_fade.setEndValue(1.0)
         
