@@ -8,6 +8,7 @@ it slices audio into rhythmic 4-bar loops.
 **controls**
 
 left mouse to seek across waveform.  
+click top right logo to disable chops.  
 
 **buttons**
 - play/pause 
