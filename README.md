@@ -27,5 +27,3 @@ click top right logo to disable chops.
 - sample rate
 - filter
 - reverb 
-
-this program is free and [donations are welcome](https://ko-fi.com/geltz)
