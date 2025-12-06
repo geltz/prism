@@ -1,5 +1,5 @@
 <p>
-  <img src="icon.png" alt="prism icon" width="100">
+  <img src="icon.png" alt="prism icon" width="128">
 </p>
 
 prism is a waveform player and effects processor.  
